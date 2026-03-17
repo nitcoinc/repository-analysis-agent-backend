@@ -16,7 +16,7 @@ class Repository(Base):
     status = Column(String, default="pending")  # pending, analyzing, completed, failed
     progress = Column(Float, default=0.0)
     message = Column(Text)
-    metadata = Column(JSON)
+    meta_data = Column(JSON)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -30,4 +30,4 @@ class AnalysisRun(Base):
     started_at = Column(DateTime(timezone=True), server_default=func.now())
     completed_at = Column(DateTime(timezone=True))
     error_message = Column(Text)
-    metadata = Column(JSON)
+    meta_data = Column(JSON)

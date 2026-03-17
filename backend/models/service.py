@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, Text, JSON, ForeignKey
+from sqlalchemy import Column, String, DateTime, Text, JSON, ForeignKey, Integer
 from sqlalchemy.sql import func
 from core.database import Base
 
@@ -12,7 +12,7 @@ class Service(Base):
     language = Column(String)
     description = Column(Text)
     file_path = Column(String)
-    metadata = Column(JSON)
+    meta_data = Column(JSON)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 

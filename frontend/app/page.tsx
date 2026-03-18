@@ -59,6 +59,16 @@ export default function Home() {
               Real-time agent execution status
             </p>
           </Link>
+          
+          <Link
+            href="/tech-debt"
+            className="p-6 border rounded-lg hover:shadow-lg transition-shadow"
+          >
+            <h2 className="text-xl font-semibold mb-2">Tech Debt Analysis</h2>
+            <p className="text-gray-600 dark:text-gray-400">
+              Technical debt detection and remediation planning
+            </p>
+          </Link>
         </div>
       </div>
     </main>

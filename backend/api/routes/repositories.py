@@ -10,6 +10,7 @@ from services.agent_orchestrator import AgentOrchestrator
 from agents.planning_agent import PlanningAgent
 from agents.code_browser_agent import CodeBrowserAgent
 from agents.dependency_mapper_agent import DependencyMapperAgent
+from agents.tech_debt_agent import TechDebtAgent
 from agents.documentation_agent import DocumentationAgent
 from agents.impact_agent import ImpactAgent
 from agents.human_review_agent import HumanReviewAgent
@@ -24,6 +25,7 @@ orchestrator = AgentOrchestrator()
 orchestrator.register_agent(PlanningAgent())
 orchestrator.register_agent(CodeBrowserAgent())
 orchestrator.register_agent(DependencyMapperAgent())
+orchestrator.register_agent(TechDebtAgent())
 orchestrator.register_agent(DocumentationAgent())
 orchestrator.register_agent(ImpactAgent())
 orchestrator.register_agent(HumanReviewAgent())
@@ -59,7 +61,7 @@ def run_analysis_task(repository_id: str, repo_path: str):
         
         # Execute workflow
         workflow = ["planning_agent", "code_browser_agent", "dependency_mapper_agent", 
-                    "documentation_agent", "impact_agent", "human_review_agent"]
+                    "tech_debt_agent", "documentation_agent", "impact_agent", "human_review_agent"]
         
         result = orchestrator.execute_workflow(run_id, workflow)
         

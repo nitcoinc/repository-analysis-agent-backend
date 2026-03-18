@@ -10,7 +10,8 @@ from api.routes import (
     impact,
     documentation,
     human_review,
-    metrics
+    metrics,
+    tech_debt
 )
 from core.config import get_settings
 from core.database import close_neo4j_driver
@@ -78,6 +79,11 @@ app.include_router(
 app.include_router(
     metrics.router,
     tags=["metrics"]
+)
+app.include_router(
+    tech_debt.router,
+    prefix="/api/tech-debt",
+    tags=["tech-debt"]
 )
 
 

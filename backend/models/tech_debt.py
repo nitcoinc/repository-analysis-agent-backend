@@ -20,7 +20,7 @@ class TechDebtItem(Base):
     line_end = Column(Integer)
     impact_score = Column(Float)  # 0-1
     effort_estimate = Column(String)  # hours, days, weeks
-    metadata = Column(JSON)
+    meta_data = Column(JSON)
     status = Column(String, default="open")  # open, in_progress, resolved, ignored
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

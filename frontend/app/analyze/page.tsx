@@ -50,21 +50,21 @@ export default function AnalyzePage() {
   const analyzeMutation = useMutation({
     mutationFn: async () => {
       if (tab === 'url') {
-        const response = await api.post('/api/repositories/analyze', {
+        const response = await api.post('/repositories/analyze', {
           repository_url: gitUrl.trim(),
           branch: branch.trim() || 'main',
         })
         return response.data as { repository_id: string; status: string; message?: string }
       }
       if (tab === 'github') {
-        const response = await api.post('/api/repositories/analyze', {
+        const response = await api.post('/repositories/analyze', {
           github_owner: ghOwner.trim(),
           github_repo: ghRepo.trim(),
           branch: branch.trim() || 'main',
         })
         return response.data as { repository_id: string; status: string; message?: string }
       }
-      const response = await api.post('/api/repositories/analyze', {
+      const response = await api.post('/repositories/analyze', {
         repository_path: localPath.trim(),
         branch: branch.trim() || 'main',
       })

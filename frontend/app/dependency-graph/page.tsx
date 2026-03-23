@@ -23,7 +23,7 @@ export default function DependencyGraphPage() {
   const { data: graphData, isLoading } = useQuery({
     queryKey: ['dependency-graph'],
     queryFn: async () => {
-      const response = await api.get('/api/dependencies/graph')
+      const response = await api.get('/dependencies/graph')
       return response.data
     },
   })

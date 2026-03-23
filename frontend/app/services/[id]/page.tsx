@@ -17,7 +17,7 @@ export default function ServiceDetailPage() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['service', id],
     queryFn: async () => {
-      const res = await api.get(`/api/services/${id}`)
+      const res = await api.get(`/services/${id}`)
       return res.data
     },
     retry: false,

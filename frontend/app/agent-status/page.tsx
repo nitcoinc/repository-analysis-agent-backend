@@ -12,7 +12,7 @@ export default function AgentStatusPage() {
     queryKey: ['human-review-checkpoints'],
     queryFn: async () => {
       try {
-        const response = await api.get('/api/human-review/checkpoints')
+        const response = await api.get('/human-review/checkpoints')
         return response.data.checkpoints || []
       } catch {
         return []

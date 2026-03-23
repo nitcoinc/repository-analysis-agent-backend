@@ -43,7 +43,7 @@ export function TechDebtClient() {
     queryKey: ['tech-debt-metrics', repositoryId],
     queryFn: async () => {
       if (!repositoryId) return null
-      const response = await api.get(`/api/tech-debt/metrics/${repositoryId}`)
+      const response = await api.get(`/tech-debt/metrics/${repositoryId}`)
       return response.data
     },
     enabled: !!repositoryId,
@@ -53,7 +53,7 @@ export function TechDebtClient() {
     queryKey: ['tech-debt-report', repositoryId],
     queryFn: async () => {
       if (!repositoryId) return null
-      const response = await api.get(`/api/tech-debt/reports/${repositoryId}`)
+      const response = await api.get(`/tech-debt/reports/${repositoryId}`)
       return response.data
     },
     enabled: !!repositoryId,
@@ -61,7 +61,7 @@ export function TechDebtClient() {
 
   const { mutate: runAnalysis, isPending: analysisPending } = useMutation({
     mutationFn: async (repoId: string) => {
-      const response = await api.post('/api/tech-debt/analyze', {
+      const response = await api.post('/tech-debt/analyze', {
         repository_id: repoId,
       })
       return response.data

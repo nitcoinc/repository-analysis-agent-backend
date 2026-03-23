@@ -38,7 +38,7 @@ export function ImpactClient() {
 
   const { data: analysis, mutate: runAnalysis, isPending } = useMutation({
     mutationFn: async (data: { repository_id: string; change_description: string }) => {
-      const response = await api.post('/api/impact-analysis/analyze', data)
+      const response = await api.post('/impact-analysis/analyze', data)
       return response.data
     },
   })

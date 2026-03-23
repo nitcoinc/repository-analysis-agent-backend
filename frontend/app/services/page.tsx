@@ -13,7 +13,7 @@ export default function ServicesPage() {
   const { data: services, isLoading } = useQuery({
     queryKey: ['services'],
     queryFn: async () => {
-      const response = await api.get('/api/services/')
+      const response = await api.get('/services/')
       return response.data.services || []
     },
   })

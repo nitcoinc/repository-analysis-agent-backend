@@ -16,7 +16,7 @@ export default function DashboardPage() {
   const { data: repositories, isLoading } = useQuery({
     queryKey: ['repositories'],
     queryFn: async () => {
-      const response = await api.get('/api/repositories/')
+      const response = await api.get('/repositories/')
       return (response.data.repositories || []) as RepoRow[]
     },
   })

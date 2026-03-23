@@ -66,7 +66,8 @@ class DependencyAnalyzer:
         ]
         
         # Find directories with service indicators
-        for root, dirs, files in path.rglob("*"):
+        import os
+        for root, dirs, files in os.walk(path):
             root_path = Path(root)
             if any(indicator in files for indicator in service_indicators):
                 service_name = root_path.name

@@ -41,7 +41,7 @@ class HumanReviewAgent(BaseAgent):
         
         # Create checkpoints if needed
         if ambiguous_deps:
-            state.should_request_human_review(
+            self.should_request_human_review(
                 state,
                 reason="ambiguous_dependencies",
                 question=f"Found {len(ambiguous_deps)} ambiguous dependencies. Please clarify:",
@@ -49,7 +49,7 @@ class HumanReviewAgent(BaseAgent):
             )
         
         if unclear_services:
-            state.should_request_human_review(
+            self.should_request_human_review(
                 state,
                 reason="unclear_service_boundaries",
                 question=f"Found {len(unclear_services)} services with unclear boundaries. Please review:",

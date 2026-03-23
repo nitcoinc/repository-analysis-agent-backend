@@ -29,7 +29,7 @@ class CodeBrowserAgent(BaseAgent):
         # Get all code files
         code_files = self.repo_manager.list_files(
             repository_path,
-            extensions=[".py", ".js", ".jsx", ".ts", ".tsx", ".java"]
+            extensions=["py", "js", "jsx", "ts", "tsx", "java"]
         )
         
         # Parse files

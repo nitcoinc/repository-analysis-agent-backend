@@ -11,7 +11,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 # Import all models
-from models import repository, service
+from models import repository, service, tech_debt
 
 # this is the Alembic Config object
 config = context.config

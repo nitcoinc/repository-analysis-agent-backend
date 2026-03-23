@@ -113,15 +113,22 @@ def get_redis_client():
 
 
 def init_db():
-    """Ensure SQLAlchemy models are imported and database tables exist."""
+    """Initialize database schema via Alembic migrations and load models."""
     # Import models so that all declarative classes are registered in Base.metadata
     import models.repository  # noqa: F401
     import models.service  # noqa: F401
     import models.tech_debt  # noqa: F401
 
+    # Use Alembic migrations as the canonical source of truth.
+    from alembic.config import Config
+    from alembic import command
+    import os
+
+    alembic_cfg = Config(os.path.join(os.path.dirname(os.path.dirname(__file__)), "alembic.ini"))
+
     try:
-        Base.metadata.create_all(bind=engine)
-        logger.info("Database tables created/validated successfully")
+        command.upgrade(alembic_cfg, "head")
+        logger.info("Database schema migrated to head via Alembic")
     except Exception as e:
-        logger.error(f"Failed to create or validate database tables: {e}")
+        logger.error(f"Failed to migrate database schema: {e}")
         raise

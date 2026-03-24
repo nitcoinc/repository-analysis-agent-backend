@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 from datetime import datetime
@@ -23,14 +23,41 @@ class HumanReviewResponse(BaseModel):
     metadata: Optional[Dict[str, Any]] = None
 
 
+def _get_orchestrator():
+    from api.routes.repositories import orchestrator
+    return orchestrator
+
+
+def _collect_checkpoints(status_filter: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Gather checkpoints from all active orchestrator runs."""
+    orch = _get_orchestrator()
+    results: List[Dict[str, Any]] = []
+    for run_id, run in orch.active_runs.items():
+        for cp in run["state"].checkpoints:
+            if status_filter and cp.get("status") != status_filter:
+                continue
+            results.append({
+                "id": cp.get("id"),
+                "run_id": run_id,
+                "agent": cp.get("agent", ""),
+                "reason": cp.get("reason", ""),
+                "question": cp.get("question", ""),
+                "options": cp.get("options"),
+                "status": cp.get("status", "pending"),
+                "timestamp": cp.get("timestamp"),
+                "response": cp.get("response"),
+                "context": {},
+            })
+    return results
+
+
 @router.get("/checkpoints")
 async def list_checkpoints(
     status: Optional[str] = None,
     api_key: bool = Depends(verify_api_key)
 ):
     """List human review checkpoints."""
-    # TODO: Implement checkpoint listing
-    return {"checkpoints": []}
+    return {"checkpoints": _collect_checkpoints(status)}
 
 
 @router.get("/checkpoints/{checkpoint_id}")
@@ -39,11 +66,10 @@ async def get_checkpoint(
     api_key: bool = Depends(verify_api_key)
 ):
     """Get human review checkpoint details."""
-    # TODO: Implement checkpoint retrieval
-    return {
-        "checkpoint_id": checkpoint_id,
-        "status": "pending"
-    }
+    for cp in _collect_checkpoints():
+        if cp["id"] == checkpoint_id:
+            return cp
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Checkpoint not found")
 
 
 @router.post("/checkpoints/{checkpoint_id}/resolve")
@@ -53,8 +79,13 @@ async def resolve_checkpoint(
     api_key: bool = Depends(verify_api_key)
 ):
     """Resolve a human review checkpoint."""
-    # TODO: Implement checkpoint resolution
-    return {
-        "checkpoint_id": checkpoint_id,
-        "status": "resolved"
-    }
+    orch = _get_orchestrator()
+    for run_id, run in orch.active_runs.items():
+        for cp in run["state"].checkpoints:
+            if cp.get("id") == checkpoint_id:
+                cp["status"] = "resolved"
+                cp["response"] = response.response
+                cp["resolved_at"] = datetime.utcnow().isoformat()
+                cp["metadata"] = response.metadata or {}
+                return {"checkpoint_id": checkpoint_id, "status": "resolved"}
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Checkpoint not found")

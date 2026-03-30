@@ -229,6 +229,12 @@ def _build_structural_summary(
         opening += f" in the **{classification}** layer"
     opening += "."
 
+
+    opening = f"**{name}** is a {language} module"
+    if classification:
+        opening += f" in the **{classification}** layer"
+    opening += "."
+
     if classes_count or funcs_count:
         behavior = (
             f"In plain terms, this part of the codebase currently exposes about **{classes_count} class(es)** "

@@ -1,6 +1,6 @@
 'use client'
 
-import { useId, useMemo } from 'react'
+import { useMemo } from 'react'
 import { cn } from '@/lib/utils'
 
 export type ArchNode = {
@@ -17,6 +17,14 @@ export type ArchEdge = {
   source: string
   target: string
   label: string
+}
+
+function sublabelTokens(text: string): string[] {
+  return (text || '')
+    .split(/[,|•]/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, 4)
 }
 
 const TYPE_RING: Record<string, string> = {
@@ -115,19 +123,6 @@ export function ArchitectureDiagram({
         className="absolute inset-0 z-0 h-full w-full text-primary/60"
         aria-hidden
       >
-        <defs>
-          <marker
-            id={`arch-arrow-${mid}`}
-            markerWidth="5"
-            markerHeight="5"
-            refX="4.2"
-            refY="2.5"
-            orient="auto"
-            markerUnits="strokeWidth"
-          >
-            <path d="M0,0 L5,2.5 L0,5 z" fill="currentColor" className="text-primary/60" />
-          </marker>
-        </defs>
         {edges.map((e) => {
           const a = byId[e.source]
           const b = byId[e.target]
@@ -139,6 +134,10 @@ export function ArchitectureDiagram({
                 d={d}
                 fill="none"
                 stroke="currentColor"
+                strokeWidth="1.35"
+                strokeLinecap="round"
+                className="text-primary/45"
+                strokeDasharray="2 1.2"
                 strokeWidth="1"
                 className="text-primary/50"
                 markerEnd={`url(#arch-arrow-${mid})`}
@@ -176,7 +175,17 @@ export function ArchitectureDiagram({
           style={{ left: `${n.x}%`, top: `${n.y}%` }}
         >
           <div className="text-[12px] font-semibold leading-snug text-foreground">{n.label}</div>
-          <div className="mt-1 line-clamp-4 text-[10px] leading-snug text-muted-foreground">{n.sublabel}</div>
+          <div className="mt-1 line-clamp-2 text-[10px] leading-snug text-muted-foreground">{n.sublabel}</div>
+          <div className="mt-2 flex flex-wrap items-center justify-center gap-1">
+            {sublabelTokens(n.sublabel).map((token) => (
+              <span
+                key={`${n.id}-${token}`}
+                className="rounded-full border border-border/60 bg-background/70 px-1.5 py-0.5 text-[9px] text-muted-foreground"
+              >
+                {token}
+              </span>
+            ))}
+          </div>
         </div>
       ))}
     </div>

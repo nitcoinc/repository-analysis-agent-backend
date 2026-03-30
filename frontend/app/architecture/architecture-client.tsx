@@ -136,6 +136,15 @@ export function ArchitectureClient() {
     void queryClient.invalidateQueries({ queryKey: ['architecture', repoId] })
   }, [queryClient, repoId])
 
+  const executiveNarrative = [
+    String(data?.narrative?.architecture_summary || '').trim(),
+    String(data?.narrative?.coding_style_summary || '').trim(),
+    String(data?.narrative?.risks_summary || '').trim(),
+    String(data?.narrative?.best_practices_summary || '').trim(),
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+
   return (
     <div className="space-y-8">
       <PageHeader
@@ -174,15 +183,7 @@ export function ArchitectureClient() {
                 getPdfSections={() => [
                   {
                     heading: 'Executive summary',
-                    body: data.narrative?.architecture_summary || '',
-                  },
-                  {
-                    heading: 'Coding style',
-                    body: String(data.narrative?.coding_style_summary || ''),
-                  },
-                  {
-                    heading: 'Risks',
-                    body: String(data.narrative?.risks_summary || ''),
+                    body: executiveNarrative,
                   },
                 ]}
               />
@@ -246,6 +247,7 @@ export function ArchitectureClient() {
           <section className="rounded-xl border border-border bg-card/50 p-4 shadow-sm">
             <h2 className="text-sm font-semibold text-foreground">Executive summary</h2>
             <MarkdownBody className="mt-2 text-sm leading-relaxed">
+              {executiveNarrative}
               {String(data.narrative?.architecture_summary || '')}
             </MarkdownBody>
             <div className="mt-3 rounded-lg border border-border/60 bg-background/40 p-3">

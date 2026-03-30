@@ -132,11 +132,14 @@ def _fallback_narrative(
                 continue
             if ln.startswith("!["):
                 continue
+            if re.match(r"^<[^>]+>$", ln):
+                continue
             lead = ln
             break
         if lead:
             lead = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", lead)
             lead = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", lead)
+            lead = re.sub(r"<[^>]+>", " ", lead)
             lead = lead.lstrip("#").strip()
             lead = re.sub(r"\s+", " ", lead)
             lead = lead[:180]

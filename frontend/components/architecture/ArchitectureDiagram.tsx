@@ -102,28 +102,16 @@ export function ArchitectureDiagram({
           const b = byId[e.target]
           if (!a || !b) return null
           const d = edgePath(a.x, a.y, b.x, b.y)
-          const lx = (a.x + b.x) / 2
-          const ly = (a.y + b.y) / 2
           return (
             <g key={e.id}>
               <path
                 d={d}
                 fill="none"
                 stroke="currentColor"
-                strokeWidth="0.85"
-                className="text-primary/45"
+                strokeWidth="1"
+                className="text-primary/50"
                 markerEnd={`url(#arch-arrow-${mid})`}
               />
-              <text
-                x={lx}
-                y={ly - 3.2}
-                fill="currentColor"
-                className="text-[3.4px] font-medium text-muted-foreground"
-                textAnchor="middle"
-                style={{ textShadow: '0 0 8px hsl(var(--background) / 0.9)' }}
-              >
-                {e.label}
-              </text>
             </g>
           )
         })}
@@ -133,7 +121,7 @@ export function ArchitectureDiagram({
         <div
           key={n.id}
           className={cn(
-            'pointer-events-none absolute z-10 max-w-[min(44%,180px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border px-3 py-2.5 text-center shadow-lg ring-1 backdrop-blur-[2px]',
+            'pointer-events-none absolute z-10 max-w-[min(44%,210px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border px-3 py-2.5 text-center shadow-lg ring-1 backdrop-blur-[2px]',
             TYPE_RING[n.type] || 'ring-border bg-muted/30'
           )}
           style={{ left: `${n.x}%`, top: `${n.y}%` }}

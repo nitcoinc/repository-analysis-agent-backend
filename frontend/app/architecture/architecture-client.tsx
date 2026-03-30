@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ArchitectureDiagram } from '@/components/architecture/ArchitectureDiagram'
 import { ExportMenu } from '@/components/export/ExportMenu'
+import { MarkdownBody } from '@/components/markdown-body'
 import { cn } from '@/lib/utils'
 
 type StackItem = { name: string; category: string; confidence: number; source: string }
@@ -226,9 +227,35 @@ export function ArchitectureClient() {
 
           <section className="rounded-xl border border-border bg-card/50 p-4 shadow-sm">
             <h2 className="text-sm font-semibold text-foreground">Executive summary</h2>
-            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              {data.narrative?.architecture_summary}
-            </p>
+            <MarkdownBody className="mt-2 text-sm leading-relaxed">
+              {String(data.narrative?.architecture_summary || '')}
+            </MarkdownBody>
+            <div className="mt-3 grid gap-3 md:grid-cols-3">
+              <div className="rounded-lg border border-border/60 bg-background/40 p-3">
+                <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Coding style
+                </p>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  {String(data.narrative?.coding_style_summary || 'No coding-style narrative available.')}
+                </p>
+              </div>
+              <div className="rounded-lg border border-border/60 bg-background/40 p-3">
+                <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Risk highlights
+                </p>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  {String(data.narrative?.risks_summary || 'No risk narrative available.')}
+                </p>
+              </div>
+              <div className="rounded-lg border border-border/60 bg-background/40 p-3">
+                <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Practices
+                </p>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  {String(data.narrative?.best_practices_summary || 'No best-practices narrative available.')}
+                </p>
+              </div>
+            </div>
           </section>
 
           <section>

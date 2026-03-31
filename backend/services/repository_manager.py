@@ -72,6 +72,7 @@ class RepositoryManager:
         except Exception as e:
             logger.error(f"Failed to clone from URL: {e}")
             raise ValueError(f"Failed to clone repository: {e}") from e
+            raise
 
     def _clone_with_branch_fallback(
         self,

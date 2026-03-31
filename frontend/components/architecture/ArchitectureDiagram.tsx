@@ -75,6 +75,7 @@ export function ArchitectureDiagram({
   edges: ArchEdge[]
   className?: string
 }) {
+  const diagramId = useId().replace(/[^a-zA-Z0-9_-]/g, '')
   const mid = useId().replace(/[^a-zA-Z0-9_-]/g, '')
   const placedNodes = useMemo(() => layoutNodes(nodes), [nodes])
   const byId = useMemo(() => Object.fromEntries(placedNodes.map((n) => [n.id, n])), [placedNodes])
@@ -94,6 +95,7 @@ export function ArchitectureDiagram({
 
   return (
     <div
+      data-diagram-id={diagramId}
       className={cn(
         'relative min-h-[min(52vh,440px)] w-full overflow-hidden rounded-xl border border-border/80 bg-card/40',
         className
@@ -155,6 +157,7 @@ export function ArchitectureDiagram({
         const ly = (a.y + b.y) / 2
         return (
           <div
+            key={`label-${diagramId}-${e.id}`}
             key={`label-${e.id}`}
             className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-1/2 rounded-full border border-border/70 bg-background/80 px-2 py-0.5 text-[10px] text-muted-foreground shadow-sm"
             style={{ left: `${lx}%`, top: `${ly}%` }}

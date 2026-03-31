@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { isAxiosError } from 'axios'
 import {
   ArrowRight,
   CheckCircle2,
@@ -125,6 +126,15 @@ const analysisViews = [
 function isFailureStatus(status?: string | null) {
   const normalized = (status || '').toLowerCase()
   return normalized === 'failed' || normalized === 'error'
+}
+
+function analysisErrorMessage(error: unknown): string {
+  if (isAxiosError(error)) {
+    const detail = error.response?.data?.detail
+    if (typeof detail === 'string' && detail.trim()) return detail
+  }
+  if (error instanceof Error && error.message) return error.message
+  return 'Request failed'
 }
 
 function StatusRow({ label, value }: { label: string; value: string }) {
@@ -370,7 +380,7 @@ export default function AnalyzePage() {
 
             {analyzeMutation.isError && (
               <div className="rounded-lg border border-red-500/30 bg-red-500/5 px-4 py-3 text-sm text-red-300">
-                {(analyzeMutation.error as Error)?.message || 'Request failed'}
+                {analysisErrorMessage(analyzeMutation.error)}
               </div>
             )}
 

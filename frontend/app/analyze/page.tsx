@@ -130,6 +130,8 @@ function isFailureStatus(status?: string | null) {
 
 function analysisErrorMessage(error: unknown): string {
   if (isAxiosError(error)) {
+    const raw = error.response?.data
+    if (typeof raw === 'string' && raw.trim()) return raw
     const detail = error.response?.data?.detail
     if (typeof detail === 'string' && detail.trim()) return detail
   }

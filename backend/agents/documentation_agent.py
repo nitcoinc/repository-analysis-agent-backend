@@ -224,6 +224,12 @@ def _build_structural_summary(
     classes_count = len(classes)
     funcs_count = len(functions)
 
+    opening = f"**{name}** is a {language} module"
+    if classification:
+        opening += f" in the **{classification}** layer"
+    opening += "."
+
+
 
 
 
@@ -278,6 +284,8 @@ def _build_structural_summary(
         f"It draws information from **{files_count} source file(s)**"
         + (f", primarily located at `{path}`." if path else ".")
     )
+
+    summary = f"{opening}\n\n{behavior}\n\n{coupling}\n\n{details}".strip()
 
     summary = f"{opening}\n\n{behavior}\n\n{coupling}\n\n{details}".strip()
 

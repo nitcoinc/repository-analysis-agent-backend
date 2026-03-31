@@ -53,7 +53,7 @@ class RepositoryManager:
             raise ValueError(self._friendly_git_error(e, branch)) from e
         except Exception as e:
             logger.error(f"Failed to clone from GitHub: {e}")
-            raise
+            raise ValueError(f"Failed to clone repository: {e}") from e
     
     def clone_from_url(
         self,
@@ -71,6 +71,7 @@ class RepositoryManager:
             raise ValueError(self._friendly_git_error(e, branch)) from e
         except Exception as e:
             logger.error(f"Failed to clone from URL: {e}")
+            raise ValueError(f"Failed to clone repository: {e}") from e
             raise
 
     def _clone_with_branch_fallback(

@@ -63,7 +63,6 @@ repositories/
 docs/
 memories/
 scripts/
-AGENTS.md
 TECH_DEBT_FEATURE.md
 
 # Python tooling & coverage

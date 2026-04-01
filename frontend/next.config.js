@@ -1,6 +1,9 @@
 /**
  * API requests use baseURL `/api` in the browser; Next rewrites forward to the real FastAPI server.
  *
+ * ``/api/temporal-data`` is implemented by ``app/api/temporal-data/route.ts`` (server-side proxy with
+ * a long timeout) so dev does not hit flaky rewrite ``ECONNRESET`` on large temporal responses.
+ *
  * If you see: "Failed to proxy ... ECONNREFUSED 127.0.0.1:8000"
  *   1. Start the backend: `cd backend && uvicorn main:app --reload --host 0.0.0.0 --port 8000`
  *   2. If `next dev` runs inside WSL but uvicorn runs on Windows, set API_PROXY_TARGET to your

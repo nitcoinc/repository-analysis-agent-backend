@@ -91,38 +91,15 @@ function withTimeoutSignal(ms: number): AbortSignal {
   return c.signal
 }
 
-function directBackendTemporalUrl(qs: URLSearchParams): string | null {
-  const base = (process.env.NEXT_PUBLIC_API_URL || '').trim()
-  if (!base) return null
-  const cleaned = base.replace(/\/+$/, '')
-  return `${cleaned}/api/temporal-data?${qs.toString()}`
-}
-
 async function fetchTemporal(qs: URLSearchParams): Promise<TemporalResponse> {
-  const primaryUrl = `/api/temporal-data?${qs.toString()}`
-  const fallbackUrl = directBackendTemporalUrl(qs)
-  const urls = [primaryUrl, ...(fallbackUrl ? [fallbackUrl] : [])]
-  let lastErr = ''
-
-  for (let i = 0; i < urls.length; i += 1) {
-    const u = urls[i]
-    try {
-      const res = await fetch(u, {
-        headers: { Accept: 'application/json', 'X-API-Key': apiKey() },
-        signal: withTimeoutSignal(i === 0 ? 60_000 : 90_000),
-      })
-      if (!res.ok) {
-        const body = await res.text()
-        lastErr = body || `HTTP ${res.status}`
-        continue
-      }
-      return res.json()
-    } catch (e) {
-      lastErr = e instanceof Error ? e.message : String(e)
-      continue
-    }
-  }
-  throw new Error(lastErr || 'Temporal data request failed')
+  // Same-origin ``/api/temporal-data`` is handled by ``app/api/temporal-data/route.ts`` (server proxy
+  // with long timeout). Avoids Next dev rewrite ``ECONNRESET`` on slow/large temporal payloads.
+  const res = await fetch(`/api/temporal-data?${qs.toString()}`, {
+    headers: { Accept: 'application/json', 'X-API-Key': apiKey() },
+    signal: withTimeoutSignal(120_000),
+  })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
 }
 
 type Zoom = 'day' | 'week' | 'month'

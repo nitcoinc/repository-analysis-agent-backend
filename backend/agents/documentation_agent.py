@@ -552,7 +552,8 @@ def gather_service_elements(
     """Symbols for one service: global code_elements match, else parse files under service path."""
     el = elements_for_service(service, code_elements, repository_path)
     if not el and repository_path:
-        el = _parse_symbols_under_service(service, repository_path)
+        max_files = int(getattr(settings, "documentation_parse_fallback_max_files", 40) or 40)
+        el = _parse_symbols_under_service(service, repository_path, max_files=max_files)
     return el
 
 
@@ -594,6 +595,26 @@ def _llm_priority_score(
     if str(service.get("module_name") or "").strip():
         bonus += 1
     return entry_points + min(3, outbound_count) + min(3, inbound_count) + bonus
+
+
+def _quick_structural_doc(
+    service: Dict[str, Any],
+    dependencies: List[Dict[str, Any]],
+    *,
+    note: str,
+    source: str,
+) -> Dict[str, Any]:
+    """Fast structural doc path with no symbol parsing."""
+    empty: List[Dict[str, Any]] = []
+    return {
+        "description": _build_structural_description(service, empty, dependencies),
+        "summary": _normalize_inventory_summary(
+            _build_structural_summary(service, empty, dependencies)
+        ),
+        "language": service.get("language", "unknown"),
+        "note": note,
+        "source": source,
+    }
 
 
 class DocumentationAgent(BaseAgent):
@@ -809,43 +830,51 @@ class DocumentationAgent(BaseAgent):
         llm_allowed_ids: Optional[set[str]] = None,
     ) -> Dict[str, Any]:
         """Generate documentation for a service."""
-        service_elements = gather_service_elements(service, code_elements, repository_path)
-
-        # Always build the structural description first (no LLM needed)
-        structural_desc = _build_structural_description(service, service_elements, dependencies)
-
-        struct_summary = _build_structural_summary(
-            service, service_elements, dependencies
-        )
         svc_id = str(service.get("id") or "")
         outbound = [d for d in dependencies if str(d.get("source") or "") == svc_id]
         inbound = [d for d in dependencies if str(d.get("target") or "") == svc_id]
-        llm_signal = _documentation_signal_score(service, service_elements, len(outbound), len(inbound))
         min_signal = int(getattr(settings, "documentation_llm_min_signal", 4) or 4)
         if not self.client:
             logger.info(
-                "Documentation (no LLM) for %s: structural summary + body",
+                "Documentation (no LLM) for %s: quick structural path",
                 service.get("name"),
             )
-            return {
-                "description": structural_desc,
-                "summary": _normalize_inventory_summary(struct_summary),
-                "language": service.get("language", "unknown"),
-                "note": "OpenAI API key not configured — showing structural analysis",
-                "source": "structural",
-            }
+            return _quick_structural_doc(
+                service,
+                dependencies,
+                note="OpenAI API key not configured — showing structural analysis",
+                source="structural",
+            )
         if llm_allowed_ids is not None and svc_id not in llm_allowed_ids:
             logger.info(
-                "Documentation budget fast-path for %s: outside llm budget; using structural docs",
+                "Documentation budget fast-path for %s: outside llm budget; skipping symbol parse",
                 service.get("name"),
             )
-            return {
-                "description": structural_desc,
-                "summary": _normalize_inventory_summary(struct_summary),
-                "language": service.get("language", "unknown"),
-                "note": "Used structural documentation fast-path (outside LLM budget)",
-                "source": "structural_budget_fast_path",
-            }
+            return _quick_structural_doc(
+                service,
+                dependencies,
+                note="Used structural documentation fast-path (outside LLM budget)",
+                source="structural_budget_fast_path",
+            )
+        cheap_signal = _llm_priority_score(service, len(outbound), len(inbound))
+        if cheap_signal < min_signal:
+            logger.info(
+                "Documentation fast-path for %s: cheap_signal=%d < min_signal=%d; skipping symbol parse",
+                service.get("name"),
+                cheap_signal,
+                min_signal,
+            )
+            return _quick_structural_doc(
+                service,
+                dependencies,
+                note=f"Used structural documentation fast-path (cheap_signal={cheap_signal})",
+                source="structural_cheap_signal_fast_path",
+            )
+
+        service_elements = gather_service_elements(service, code_elements, repository_path)
+        structural_desc = _build_structural_description(service, service_elements, dependencies)
+        struct_summary = _build_structural_summary(service, service_elements, dependencies)
+        llm_signal = _documentation_signal_score(service, service_elements, len(outbound), len(inbound))
         if llm_signal < min_signal:
             logger.info(
                 "Documentation fast-path for %s: signal=%d < min_signal=%d; using structural docs",

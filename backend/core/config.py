@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     # Hard cap on services that may use LLM docs in one run (top-priority services only).
     # 0 means no cap. Env: DOCUMENTATION_MAX_LLM_SERVICES
     documentation_max_llm_services: int = 24
+    # Parse fallback file cap when code_elements miss a service path.
+    # Lower values reduce documentation stage latency on large repos.
+    documentation_parse_fallback_max_files: int = 40
     # Max completion tokens per service doc JSON (lower = faster / cheaper; higher = longer markdown).
     documentation_max_tokens: int = 2200
     # Timeout per documentation LLM request to avoid long tail latency. Env: DOCUMENTATION_LLM_TIMEOUT_SEC

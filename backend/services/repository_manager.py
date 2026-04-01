@@ -1,15 +1,23 @@
 import os
+import re
 import shutil
 import logging
 import uuid
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from github import Github
 from git import Repo, InvalidGitRepositoryError, GitCommandError
 from core.config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+
+def _redact_git_url(url: str) -> str:
+    """Strip embedded PATs from URLs before logging."""
+    if not url:
+        return url
+    return re.sub(r"(x-access-token:)[^@\s]+(@)", r"\1***\2", url, flags=re.IGNORECASE)
 
 
 class RepositoryManager:
@@ -19,14 +27,35 @@ class RepositoryManager:
         self.repositories_dir = Path(settings.repositories_dir)
         self.repositories_dir.mkdir(parents=True, exist_ok=True)
         self.github_client: Optional[Github] = None
-        
+        self._clone_depth = int(getattr(settings, "git_clone_depth", 1) or 0)
+
         if settings.github_token:
             try:
                 self.github_client = Github(settings.github_token)
                 logger.info("GitHub client initialized")
             except Exception as e:
                 logger.warning(f"Failed to initialize GitHub client: {e}")
-    
+
+    def _maybe_authenticate_github_https_url(self, url: str) -> str:
+        """
+        Embed PAT for https://github.com/... so `git clone` works for private repos
+        without a machine credential helper. Uses GitHub-recommended x-access-token form.
+        """
+        tok = (settings.github_token or "").strip()
+        if not tok:
+            return url
+        u = url.strip()
+        low = u.lower()
+        if "github.com" not in low or not u.startswith("https://"):
+            return u
+        if "x-access-token:" in u or "@" in u.split("github.com", 1)[0]:
+            return u
+        if u.startswith("https://github.com/"):
+            return u.replace("https://github.com/", f"https://x-access-token:{tok}@github.com/", 1)
+        if u.startswith("https://www.github.com/"):
+            return u.replace("https://www.github.com/", f"https://x-access-token:{tok}@github.com/", 1)
+        return u
+
     def clone_from_github(
         self,
         owner: str,
@@ -46,15 +75,16 @@ class RepositoryManager:
         try:
             repo_id = str(uuid.uuid4())
             local_path = self.repositories_dir / repo_id
+            clone_url = self._maybe_authenticate_github_https_url(clone_url)
             self._clone_with_branch_fallback(clone_url, local_path, branch)
-            logger.info(f"Cloned {owner}/{repo} to {local_path}")
+            logger.info("Cloned %s/%s to %s", owner, repo, local_path)
             return str(local_path)
         except GitCommandError as e:
             raise ValueError(self._friendly_git_error(e, branch)) from e
         except Exception as e:
             logger.error(f"Failed to clone from GitHub: {e}")
             raise ValueError(f"Failed to clone repository: {e}") from e
-    
+
     def clone_from_url(
         self,
         url: str,
@@ -64,15 +94,26 @@ class RepositoryManager:
         try:
             repo_id = str(uuid.uuid4())
             local_path = self.repositories_dir / repo_id
-            self._clone_with_branch_fallback(url, local_path, branch)
-            logger.info(f"Cloned {url} to {local_path}")
+            raw = url.strip()
+            clone_url = self._maybe_authenticate_github_https_url(raw)
+            self._clone_with_branch_fallback(clone_url, local_path, branch)
+            logger.info("Cloned %s to %s", _redact_git_url(raw), local_path)
             return str(local_path)
         except GitCommandError as e:
             raise ValueError(self._friendly_git_error(e, branch)) from e
         except Exception as e:
             logger.error(f"Failed to clone from URL: {e}")
             raise ValueError(f"Failed to clone repository: {e}") from e
-            raise
+
+    def _clone_multi_options(self, branch: Optional[str]) -> Optional[List[str]]:
+        """Shallow + single-branch when possible — dramatically faster than full clone."""
+        d = self._clone_depth
+        if d <= 0:
+            return None
+        opts: List[str] = ["--depth", str(d)]
+        if branch:
+            opts.append("--single-branch")
+        return opts
 
     def _clone_with_branch_fallback(
         self,
@@ -81,25 +122,42 @@ class RepositoryManager:
         branch: Optional[str] = None,
     ) -> None:
         """Clone repo, retrying default branch when an explicit branch is missing."""
+        mo = self._clone_multi_options(branch)
+        mo_default = self._clone_multi_options(None)
+        if mo:
+            logger.info(
+                "Cloning with shallow history (depth=%s, single_branch=%s)",
+                self._clone_depth,
+                bool(branch),
+            )
         try:
             if branch:
-                Repo.clone_from(clone_url, str(local_path), branch=branch)
+                Repo.clone_from(
+                    clone_url,
+                    str(local_path),
+                    branch=branch,
+                    multi_options=mo,
+                )
             else:
-                Repo.clone_from(clone_url, str(local_path))
+                Repo.clone_from(clone_url, str(local_path), multi_options=mo_default)
             return
         except GitCommandError as exc:
             err = str(exc).lower()
-            missing_branch = branch and "remote branch" in err and "not found" in err
+            missing_branch = branch and (
+                ("remote branch" in err and "not found" in err)
+                or "couldn't find remote ref" in err
+                or "not a valid object name" in err
+            )
             if not missing_branch:
                 raise
             logger.warning(
                 "Branch '%s' not found for %s; retrying clone with repository default branch.",
                 branch,
-                clone_url,
+                _redact_git_url(clone_url),
             )
             if local_path.exists():
                 shutil.rmtree(str(local_path), ignore_errors=True)
-            Repo.clone_from(clone_url, str(local_path))
+            Repo.clone_from(clone_url, str(local_path), multi_options=mo_default)
 
     def _friendly_git_error(self, exc: GitCommandError, branch: Optional[str]) -> str:
         raw = str(exc)

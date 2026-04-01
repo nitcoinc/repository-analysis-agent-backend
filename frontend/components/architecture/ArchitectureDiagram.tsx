@@ -34,15 +34,14 @@ const TYPE_RING: Record<string, string> = {
   other: 'ring-amber-500/40 bg-amber-500/10',
 }
 
-/** Curved edge in viewBox 0–100; keeps arrows readable and avoids overlapping node centers awkwardly. */
+/** Curved edge in viewBox 0–100; bend keeps lines off node centers. */
 function edgePath(x1: number, y1: number, x2: number, y2: number): string {
   const dx = x2 - x1
   const dy = y2 - y1
   const dist = Math.hypot(dx, dy) || 1
-  // Control point offset: bend perpendicular to the chord
   const nx = -dy / dist
   const ny = dx / dist
-  const bend = Math.min(12, dist * 0.35)
+  const bend = Math.min(14, dist * 0.38)
   const mx = (x1 + x2) / 2 + nx * bend
   const my = (y1 + y2) / 2 + ny * bend
   return `M ${x1} ${y1} Q ${mx} ${my} ${x2} ${y2}`
@@ -59,10 +58,12 @@ function layoutNodes(nodes: ArchNode[]): ArchNode[] {
     arr.forEach((n, i) => out.push({ ...n, x: xStart + i * step, y }))
   }
 
-  place(byType.frontend, 18, 50 - ((byType.frontend.length - 1) * 14) / 2, 14)
-  place(byType.backend, 44, 50 - ((byType.backend.length - 1) * 16) / 2, 16)
-  place(byType.database, 76, 50 - ((byType.database.length - 1) * 16) / 2, 16)
-  place(byType.other, 44, 80, 12)
+  // Wider vertical spacing (percent of container) so lanes do not feel cramped
+  place(byType.frontend, 16, 50 - ((byType.frontend.length - 1) * 14) / 2, 14)
+  place(byType.backend, 46, 50 - ((byType.backend.length - 1) * 16) / 2, 16)
+  place(byType.database, 78, 50 - ((byType.database.length - 1) * 16) / 2, 16)
+  // Side / infra: right column, vertically centered in the app lane
+  place(byType.other, 46, 86 - ((byType.other.length - 1) * 10) / 2, 10)
   return out
 }
 
@@ -76,7 +77,7 @@ export function ArchitectureDiagram({
   className?: string
 }) {
   const diagramId = useId().replace(/[^a-zA-Z0-9_-]/g, '')
-  const mid = useId().replace(/[^a-zA-Z0-9_-]/g, '')
+  const markerId = `arch-arrow-${diagramId}`
   const placedNodes = useMemo(() => layoutNodes(nodes), [nodes])
   const byId = useMemo(() => Object.fromEntries(placedNodes.map((n) => [n.id, n])), [placedNodes])
 
@@ -84,7 +85,7 @@ export function ArchitectureDiagram({
     return (
       <div
         className={cn(
-          'flex min-h-[220px] items-center justify-center rounded-xl border border-dashed border-border text-sm text-muted-foreground',
+          'flex min-h-[240px] items-center justify-center rounded-xl border border-dashed border-border text-sm text-muted-foreground',
           className
         )}
       >
@@ -97,54 +98,63 @@ export function ArchitectureDiagram({
     <div
       data-diagram-id={diagramId}
       className={cn(
-        'relative min-h-[min(52vh,440px)] w-full overflow-hidden rounded-xl border border-border/80 bg-card/40',
+        'relative min-h-[min(56vh,480px)] w-full overflow-hidden rounded-xl border border-border/80 bg-card/40',
         className
       )}
     >
       <div className="pointer-events-none absolute inset-0 [background-image:radial-gradient(circle_at_1px_1px,hsl(215_25%_32%/0.22)_1px,transparent_0)] [background-size:22px_22px]" />
-      <div className="pointer-events-none absolute inset-x-0 top-[8%] h-[20%] rounded-md border border-sky-500/15 bg-sky-500/[0.03]" />
-      <div className="pointer-events-none absolute inset-x-0 top-[34%] h-[24%] rounded-md border border-violet-500/15 bg-violet-500/[0.03]" />
-      <div className="pointer-events-none absolute inset-x-0 top-[66%] h-[20%] rounded-md border border-emerald-500/15 bg-emerald-500/[0.03]" />
+      <div className="pointer-events-none absolute inset-x-0 top-[5%] h-[24%] rounded-md border border-sky-500/15 bg-sky-500/[0.03]" />
+      <div className="pointer-events-none absolute inset-x-0 top-[32%] h-[28%] rounded-md border border-violet-500/15 bg-violet-500/[0.03]" />
+      <div className="pointer-events-none absolute inset-x-0 top-[64%] h-[24%] rounded-md border border-emerald-500/15 bg-emerald-500/[0.03]" />
       <div className="pointer-events-none absolute left-2 top-2 text-[10px] uppercase tracking-wide text-muted-foreground/80">
         Presentation / Entry
       </div>
-      <div className="pointer-events-none absolute left-2 top-[38%] text-[10px] uppercase tracking-wide text-muted-foreground/80">
+      <div className="pointer-events-none absolute left-2 top-[36%] text-[10px] uppercase tracking-wide text-muted-foreground/80">
         Application / API
       </div>
-      <div className="pointer-events-none absolute left-2 top-[70%] text-[10px] uppercase tracking-wide text-muted-foreground/80">
+      <div className="pointer-events-none absolute left-2 top-[68%] text-[10px] uppercase tracking-wide text-muted-foreground/80">
         Data / Persistence
       </div>
       {/*
-        Use preserveAspectRatio="none" so viewBox 0–100 maps to the full SVG box. With "meet",
-        the square viewBox is letterboxed inside a wide rectangle and edge endpoints no longer
-        align with node positions set as left/top % of the same container.
+        preserveAspectRatio="none" maps viewBox 0–100 to the full SVG box so edge endpoints
+        align with node positions expressed as % left/top of the same container.
       */}
       <svg
         viewBox="0 0 100 100"
         preserveAspectRatio="none"
-        className="absolute inset-0 z-0 h-full w-full text-primary/60"
+        className="absolute inset-0 z-0 h-full w-full"
         aria-hidden
       >
+        <defs>
+          <marker
+            id={markerId}
+            markerUnits="userSpaceOnUse"
+            markerWidth="2"
+            markerHeight="2"
+            refX="1.6"
+            refY="1"
+            orient="auto"
+          >
+            <path d="M0,0 L0,2 L2,1 z" fill="hsl(var(--primary) / 0.55)" />
+          </marker>
+        </defs>
         {edges.map((e) => {
           const a = byId[e.source]
           const b = byId[e.target]
           if (!a || !b) return null
           const d = edgePath(a.x, a.y, b.x, b.y)
           return (
-            <g key={e.id}>
-              <path
-                d={d}
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.35"
-                strokeLinecap="round"
-                className="text-primary/45"
-                strokeDasharray="2 1.2"
-                strokeWidth="1"
-                className="text-primary/50"
-                markerEnd={`url(#arch-arrow-${mid})`}
-              />
-            </g>
+            <path
+              key={e.id}
+              d={d}
+              fill="none"
+              stroke="hsl(var(--primary) / 0.42)"
+              strokeWidth="0.42"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
+              markerEnd={`url(#${markerId})`}
+            />
           )
         })}
       </svg>
@@ -158,8 +168,7 @@ export function ArchitectureDiagram({
         return (
           <div
             key={`label-${diagramId}-${e.id}`}
-            key={`label-${e.id}`}
-            className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-1/2 rounded-full border border-border/70 bg-background/80 px-2 py-0.5 text-[10px] text-muted-foreground shadow-sm"
+            className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-1/2 rounded-full border border-border/70 bg-background/90 px-2 py-0.5 text-[10px] text-muted-foreground shadow-sm backdrop-blur-sm"
             style={{ left: `${lx}%`, top: `${ly}%` }}
           >
             {e.label}
@@ -171,8 +180,7 @@ export function ArchitectureDiagram({
         <div
           key={n.id}
           className={cn(
-            'pointer-events-none absolute z-10 max-w-[min(40%,240px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border px-3 py-2.5 text-center shadow-lg ring-1 backdrop-blur-[2px]',
-            'pointer-events-none absolute z-10 max-w-[min(44%,210px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border px-3 py-2.5 text-center shadow-lg ring-1 backdrop-blur-[2px]',
+            'pointer-events-none absolute z-10 max-w-[min(42%,220px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border px-3 py-2.5 text-center shadow-md ring-1 backdrop-blur-[2px]',
             TYPE_RING[n.type] || 'ring-border bg-muted/30'
           )}
           style={{ left: `${n.x}%`, top: `${n.y}%` }}

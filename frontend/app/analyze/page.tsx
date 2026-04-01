@@ -130,6 +130,21 @@ function isFailureStatus(status?: string | null) {
 
 function analysisErrorMessage(error: unknown): string {
   if (isAxiosError(error)) {
+    const code = error.code
+    const msg = error.message || ''
+    if (
+      code === 'ECONNRESET' ||
+      code === 'ECONNREFUSED' ||
+      code === 'ETIMEDOUT' ||
+      msg.includes('Network Error') ||
+      msg.includes('socket hang up')
+    ) {
+      return (
+        'Could not reach the analysis API (connection reset, refused, or timeout). ' +
+        'Start the backend on port 8000 (e.g. uvicorn main:app --host 0.0.0.0 --port 8000). ' +
+        'Large repos clone in the background after the request returns—if this persists, check the backend log.'
+      )
+    }
     const raw = error.response?.data
     if (typeof raw === 'string' && raw.trim()) return raw
     const detail = error.response?.data?.detail
@@ -216,9 +231,11 @@ export default function AnalyzePage() {
     enabled: !!activeRepoId,
     refetchInterval: (q) => {
       const s = q.state.data?.status?.toLowerCase()
-      if (!s) return 1000
+      if (!s) return 400
       if (terminalStatuses.has(s)) return false
-      return 1000
+      if (s === 'cloning' || s === 'queued' || s === 'analyzing') return 250
+      if (s === 'running') return 500
+      return 800
     },
   })
 

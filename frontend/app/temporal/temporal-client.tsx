@@ -25,6 +25,15 @@ type TimelineEvent = {
   meta?: Record<string, unknown>
 }
 
+type SampledComment = {
+  pr: number
+  pr_title?: string
+  kind?: string
+  author: string
+  body_preview: string
+  created_at?: string | null
+}
+
 type TemporalResponse = {
   repository_id: string
   timeline: TimelineEvent[]
@@ -38,8 +47,21 @@ type TemporalResponse = {
     large_prs: { number: number; title: string; changed_files: number; lines: number }[]
     hotfix_patterns: { number: number; title: string }[]
     repeat_files: { path: string; commits: number }[]
+    recent_prs?: {
+      number: number
+      title: string
+      author: string
+      merged_at?: string | null
+      changed_files: number
+      commits: number
+      additions: number
+      deletions: number
+      head_ref: string
+      base_ref: string
+      body_preview: string
+    }[]
   }
-  comment_insights: { themes: string[]; sampled: unknown[] }
+  comment_insights: { themes: string[]; sampled: SampledComment[] }
   impact_evolution: {
     service_id: string
     name: string
@@ -54,17 +76,53 @@ type TemporalResponse = {
     risky_modules: string
     anomalies: string
   }
-  debug?: { commits_processed?: number; time_range?: { since: string; until: string } }
+  debug?: {
+    commits_processed?: number
+    time_range?: { since?: string | null; until?: string | null; mode?: string; note?: string }
+  }
 }
 
 const apiKey = () => process.env.NEXT_PUBLIC_API_KEY || 'dev-local-key'
 
+function withTimeoutSignal(ms: number): AbortSignal {
+  const c = new AbortController()
+  const t = setTimeout(() => c.abort(), ms)
+  c.signal.addEventListener('abort', () => clearTimeout(t), { once: true })
+  return c.signal
+}
+
+function directBackendTemporalUrl(qs: URLSearchParams): string | null {
+  const base = (process.env.NEXT_PUBLIC_API_URL || '').trim()
+  if (!base) return null
+  const cleaned = base.replace(/\/+$/, '')
+  return `${cleaned}/api/temporal-data?${qs.toString()}`
+}
+
 async function fetchTemporal(qs: URLSearchParams): Promise<TemporalResponse> {
-  const res = await fetch(`/api/temporal-data?${qs.toString()}`, {
-    headers: { Accept: 'application/json', 'X-API-Key': apiKey() },
-  })
-  if (!res.ok) throw new Error(await res.text())
-  return res.json()
+  const primaryUrl = `/api/temporal-data?${qs.toString()}`
+  const fallbackUrl = directBackendTemporalUrl(qs)
+  const urls = [primaryUrl, ...(fallbackUrl ? [fallbackUrl] : [])]
+  let lastErr = ''
+
+  for (let i = 0; i < urls.length; i += 1) {
+    const u = urls[i]
+    try {
+      const res = await fetch(u, {
+        headers: { Accept: 'application/json', 'X-API-Key': apiKey() },
+        signal: withTimeoutSignal(i === 0 ? 60_000 : 90_000),
+      })
+      if (!res.ok) {
+        const body = await res.text()
+        lastErr = body || `HTTP ${res.status}`
+        continue
+      }
+      return res.json()
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : String(e)
+      continue
+    }
+  }
+  throw new Error(lastErr || 'Temporal data request failed')
 }
 
 type Zoom = 'day' | 'week' | 'month'
@@ -82,6 +140,14 @@ function bucketLabel(key: string, zoom: Zoom): string {
   if (zoom === 'day') return format(d, 'MMM d, yyyy')
   if (zoom === 'week') return `Week of ${format(d, 'MMM d, yyyy')}`
   return format(d, 'MMMM yyyy')
+}
+
+function dayStartIso(value: string): string {
+  return new Date(`${value}T00:00:00`).toISOString()
+}
+
+function dayEndIso(value: string): string {
+  return new Date(`${value}T23:59:59.999`).toISOString()
 }
 
 export function TemporalClient() {
@@ -106,8 +172,8 @@ export function TemporalClient() {
     const p = new URLSearchParams()
     if (!repoId) return p
     p.set('repoId', repoId)
-    if (since) p.set('since', new Date(since).toISOString())
-    if (until) p.set('until', new Date(until).toISOString())
+    if (since) p.set('since', dayStartIso(since))
+    if (until) p.set('until', dayEndIso(until))
     if (author.trim()) p.set('author', author.trim())
     if (moduleId.trim()) p.set('module', moduleId.trim())
     p.set('max_commits', '600')
@@ -277,11 +343,11 @@ export function TemporalClient() {
         </div>
         <div className="space-y-2">
           <label className="text-xs font-medium text-muted-foreground">Since (optional)</label>
-          <Input type="datetime-local" value={since} onChange={(e) => setSince(e.target.value)} />
+          <Input type="date" value={since} onChange={(e) => setSince(e.target.value)} />
         </div>
         <div className="space-y-2">
           <label className="text-xs font-medium text-muted-foreground">Until (optional)</label>
-          <Input type="datetime-local" value={until} onChange={(e) => setUntil(e.target.value)} />
+          <Input type="date" value={until} onChange={(e) => setUntil(e.target.value)} />
         </div>
         <div className="space-y-2">
           <label className="text-xs font-medium text-muted-foreground">Author contains</label>
@@ -295,6 +361,10 @@ export function TemporalClient() {
             placeholder="Optional service UUID"
             className="font-mono text-xs"
           />
+        </div>
+        <div className="lg:col-span-2 text-[11px] text-muted-foreground">
+          Date filters now use the browser's native calendar picker. `Since` covers the start of the selected day and
+          `Until` covers the end of the selected day.
         </div>
       </div>
 
@@ -312,7 +382,9 @@ export function TemporalClient() {
         <>
           {data.debug?.time_range ? (
             <p className="text-[11px] text-muted-foreground">
-              Window: {data.debug.time_range.since} → {data.debug.time_range.until} · Commits processed:{' '}
+              Window: {data.debug.time_range.since ?? '—'} → {data.debug.time_range.until ?? '—'}
+              {data.debug.time_range.mode ? ` · ${data.debug.time_range.mode}` : ''}
+              {data.debug.time_range.note ? ` — ${data.debug.time_range.note}` : ''} · Commits processed:{' '}
               {data.debug.commits_processed ?? '—'}
             </p>
           ) : null}
@@ -366,19 +438,22 @@ export function TemporalClient() {
               </div>
             </div>
             <div className="overflow-x-auto pb-2">
-              <div className="flex min-w-max gap-4">
-                {grouped.map((col) => (
-                  <div key={col.key} className="w-[220px] shrink-0 rounded-lg border border-border/80 bg-card/50 p-2">
-                    <div className="mb-2 flex items-center gap-1 border-b border-border/60 pb-1 text-[11px] font-medium text-muted-foreground">
-                      <CalendarRange className="h-3 w-3" />
-                      {col.label}
-                    </div>
-                    <ul className="space-y-2">
-                      {col.events.map((e) => (
-                        <li
-                          key={e.id}
-                          className="rounded-md border border-border/50 bg-background/60 px-2 py-1.5 text-[11px]"
-                        >
+              {grouped.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No commit or PR events matched the current filters.</p>
+              ) : (
+                <div className="flex min-w-max gap-4">
+                  {grouped.map((col) => (
+                    <div key={col.key} className="w-[220px] shrink-0 rounded-lg border border-border/80 bg-card/50 p-2">
+                      <div className="mb-2 flex items-center gap-1 border-b border-border/60 pb-1 text-[11px] font-medium text-muted-foreground">
+                        <CalendarRange className="h-3 w-3" />
+                        {col.label}
+                      </div>
+                      <ul className="space-y-2">
+                        {col.events.map((e) => (
+                          <li
+                            key={e.id}
+                            className="rounded-md border border-border/50 bg-background/60 px-2 py-1.5 text-[11px]"
+                          >
                           <div className="flex items-center gap-1 text-muted-foreground">
                             {e.type === 'pr_merge' ? (
                               <GitMerge className="h-3 w-3 shrink-0 text-violet-400" />
@@ -389,18 +464,40 @@ export function TemporalClient() {
                           </div>
                           <p className="mt-0.5 line-clamp-3 font-medium text-foreground">{e.summary}</p>
                           <p className="text-[10px] text-muted-foreground">{e.author}</p>
+                          {e.type === 'commit' ? (
+                            <p className="mt-0.5 text-[10px] text-muted-foreground">
+                              SHA {(e.meta?.sha as string) || '—'} · {(e.meta?.files as number) || 0} file(s) ·{' '}
+                              {(e.meta?.lines as number) || 0} changed lines
+                            </p>
+                          ) : (
+                            <p className="mt-0.5 text-[10px] text-muted-foreground">
+                              {(e.meta?.changed_files as number) || 0} file(s) · +{(e.meta?.additions as number) || 0} / -
+                              {(e.meta?.deletions as number) || 0} · {(e.meta?.commits as number) || 0} commit(s)
+                            </p>
+                          )}
                           {e.impacted_modules?.length ? (
                             <p className="mt-0.5 text-[10px] text-primary/80">
                               Modules: {e.impacted_modules.slice(0, 4).join(', ')}
                               {e.impacted_modules.length > 4 ? '…' : ''}
                             </p>
                           ) : null}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
+                          {typeof e.meta?.body_preview === 'string' && e.meta.body_preview ? (
+                            <p className="mt-1 line-clamp-4 text-[10px] text-muted-foreground/90">
+                              {String(e.meta.body_preview)}
+                            </p>
+                          ) : null}
+                          {Array.isArray(e.meta?.file_sample) && (e.meta?.file_sample as string[]).length > 0 ? (
+                            <p className="mt-1 text-[10px] text-muted-foreground/80 break-all">
+                              Files: {(e.meta?.file_sample as string[]).join(', ')}
+                            </p>
+                          ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </section>
 
@@ -473,6 +570,28 @@ export function TemporalClient() {
                       <li key={p.number} className="break-words">
                         #{p.number} {p.title.slice(0, 80)}
                         {p.title.length > 80 ? '…' : ''} ({p.changed_files} files)
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <p className="font-medium text-foreground">Recent merged PRs</p>
+                  <ul className="mt-1 space-y-2 text-muted-foreground">
+                    {(data.pr_insights?.recent_prs || []).slice(0, 8).map((p) => (
+                      <li key={p.number} className="rounded-md border border-border/50 bg-background/50 px-2 py-1.5">
+                        <p className="font-medium text-foreground">
+                          #{p.number} {p.title}
+                        </p>
+                        <p className="text-[10px]">
+                          {p.author || 'unknown'} · {p.changed_files} file(s) · {p.commits} commit(s) · +{p.additions} / -
+                          {p.deletions}
+                        </p>
+                        {(p.head_ref || p.base_ref) && (
+                          <p className="text-[10px] text-muted-foreground/80">
+                            {p.head_ref || 'head'} → {p.base_ref || 'base'}
+                          </p>
+                        )}
+                        {p.body_preview ? <p className="mt-1 line-clamp-4 text-[10px]">{p.body_preview}</p> : null}
                       </li>
                     ))}
                   </ul>
@@ -555,14 +674,32 @@ export function TemporalClient() {
             </section>
           </div>
 
-          {(data.comment_insights?.themes?.length || 0) > 0 ? (
+          {(data.comment_insights?.themes?.length || 0) > 0 || (data.comment_insights?.sampled?.length || 0) > 0 ? (
             <section className="rounded-xl border border-border bg-card/50 p-4">
               <h2 className="text-sm font-semibold">Comment intelligence (sampled)</h2>
-              <ul className="mt-2 list-inside list-disc text-xs text-muted-foreground">
-                {data.comment_insights.themes.map((t, i) => (
-                  <li key={i}>{t}</li>
-                ))}
-              </ul>
+              {(data.comment_insights.themes || []).length > 0 ? (
+                <ul className="mt-2 list-inside list-disc text-xs text-muted-foreground">
+                  {data.comment_insights.themes.map((t, i) => (
+                    <li key={i}>{t}</li>
+                  ))}
+                </ul>
+              ) : null}
+              {(data.comment_insights.sampled || []).length > 0 ? (
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  {data.comment_insights.sampled.slice(0, 10).map((c, i) => (
+                    <div key={`${c.pr}-${c.created_at || i}`} className="rounded-lg border border-border/60 bg-background/50 p-3">
+                      <p className="text-[11px] font-medium text-foreground">
+                        PR #{c.pr} {c.pr_title ? `· ${c.pr_title}` : ''}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {c.kind || 'comment'} · {c.author || 'unknown'}
+                        {c.created_at ? ` · ${format(parseISO(c.created_at), 'MMM d, yyyy')}` : ''}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">{c.body_preview}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </section>
           ) : null}
         </>

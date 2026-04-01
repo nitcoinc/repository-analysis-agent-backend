@@ -3,6 +3,7 @@ from typing import Dict, Any
 from agents.base_agent import BaseAgent, AgentState
 from services.tech_debt_analyzer import TechDebtAnalyzer
 from services.graph_service import GraphService
+from services.openai_chat import chat_completions_create
 from openai import OpenAI
 from core.config import get_settings
 
@@ -22,7 +23,7 @@ class TechDebtAgent(BaseAgent):
         self.graph_service = GraphService()
         self.client = None
         if settings.openai_api_key:
-            self.client = OpenAI(api_key=settings.openai_api_key)
+            self.client = OpenAI(api_key=settings.openai_api_key, base_url=settings.openai_base_url or None)
     
     def execute(self, state: AgentState) -> AgentState:
         """Execute tech debt analysis."""
@@ -101,8 +102,8 @@ For each item, provide:
 Format as JSON with recommendations array."""
 
         try:
-            response = self.client.chat.completions.create(
-                model=settings.openai_model,
+            response = chat_completions_create(
+                self.client,
                 messages=[
                     {"role": "system", "content": "You are a technical debt expert. Provide actionable remediation recommendations."},
                     {"role": "user", "content": prompt}

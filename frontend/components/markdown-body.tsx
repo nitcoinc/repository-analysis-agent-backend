@@ -71,10 +71,13 @@ export function MarkdownBody({
   children,
   className,
   compact,
+  variant = 'default',
 }: {
   children?: ReactNode
   className?: string
   compact?: boolean
+  /** `card`: clamp lines for inventory tiles (no heavy scrollbars). */
+  variant?: 'default' | 'card'
 }) {
   const content =
     typeof children === 'string'
@@ -91,8 +94,11 @@ export function MarkdownBody({
   return (
     <div
       className={cn(
-        compact ? 'max-h-64 overflow-y-auto pr-1' : '',
         'markdown-body',
+        compact &&
+          variant === 'card' &&
+          'line-clamp-6 overflow-hidden break-words text-foreground/95 [&_pre]:whitespace-pre-wrap [&_pre]:break-all',
+        compact && variant === 'default' && 'max-h-64 overflow-y-auto pr-1 scrollbar-thin',
         className
       )}
     >

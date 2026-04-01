@@ -1,10 +1,12 @@
 import logging
 from typing import Dict, Any
 from agents.base_agent import BaseAgent, AgentState
+from core.config import get_settings
 from services.code_parser import CodeParserService
 from services.repository_manager import RepositoryManager
 
 logger = logging.getLogger(__name__)
+settings = get_settings()
 
 
 class CodeBrowserAgent(BaseAgent):
@@ -36,7 +38,8 @@ class CodeBrowserAgent(BaseAgent):
         parsed_files = {}
         code_elements = []
         
-        for file_path in code_files[:100]:  # Limit for performance
+        max_files = int(getattr(settings, "code_browser_max_files", 600) or 600)
+        for file_path in code_files[:max_files]:
             try:
                 elements = self.parser_service.parse_file(file_path)
                 if elements:
@@ -51,7 +54,7 @@ class CodeBrowserAgent(BaseAgent):
         
         # Extract imports
         all_imports = {}
-        for file_path in code_files[:100]:
+        for file_path in code_files[:max_files]:
             try:
                 imports = self.parser_service.extract_imports(file_path)
                 if imports:

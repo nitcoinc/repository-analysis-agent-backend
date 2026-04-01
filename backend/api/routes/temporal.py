@@ -109,6 +109,13 @@ async def get_temporal_data(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except Exception as exc:
+        # GitPython, filesystem, or unexpected analysis errors — avoid opaque 500s
+        logger.exception("temporal-data failed for repo=%s", repoId[:12])
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Temporal analysis failed: {exc}",
+        ) from exc
 
     llm_part = enrich_temporal_insights(base)
     out: Dict[str, Any] = {**base, **llm_part}

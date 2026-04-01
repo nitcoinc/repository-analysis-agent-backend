@@ -129,21 +129,38 @@ def fetch_pull_requests(
         if len(prs) >= max_prs:
             break
 
-    # Optional: sample comments on a few recent PRs for themes
-    for pr_rec in prs[:5]:
+    # Optional: sample issue + review comments on recent PRs for themes and UI detail
+    for pr_rec in prs[:12]:
         try:
             pr = repo.get_pull(pr_rec.number)
             for c in list(pr.get_issue_comments())[:8]:
                 comment_samples.append(
                     {
                         "pr": pr_rec.number,
+                        "pr_title": pr_rec.title,
+                        "kind": "issue_comment",
                         "author": c.user.login if c.user else "",
-                        "body_preview": (c.body or "")[:400],
+                        "body_preview": (c.body or "")[:600],
+                        "created_at": c.created_at.isoformat() if c.created_at else None,
+                    }
+                )
+            for c in list(pr.get_review_comments())[:8]:
+                comment_samples.append(
+                    {
+                        "pr": pr_rec.number,
+                        "pr_title": pr_rec.title,
+                        "kind": "review_comment",
+                        "author": c.user.login if c.user else "",
+                        "body_preview": (c.body or "")[:600],
                         "created_at": c.created_at.isoformat() if c.created_at else None,
                     }
                 )
         except Exception:
             pass
-
+    comment_samples.sort(
+        key=lambda x: str(x.get("created_at") or ""),
+        reverse=True,
+    )
+    comment_samples = comment_samples[:40]
     logger.info("temporal_github: fetched %d merged PRs", len(prs))
     return prs, comment_samples

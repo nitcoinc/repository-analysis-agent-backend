@@ -357,26 +357,62 @@ export function ArchitectureClient() {
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
                 {data.narrative?.coding_style_summary}
               </p>
-              <dl className="mt-4 space-y-2 text-xs">
-                <div className="flex justify-between gap-2 border-t border-border/60 pt-2">
-                  <dt className="text-muted-foreground">Style label</dt>
-                  <dd className="font-medium text-foreground">{String(data.coding_style?.label ?? '—')}</dd>
+              <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
+                Metrics below come from static sampling of Python, TypeScript/JavaScript, and Java files in the clone (up to
+                ~120 files combined). They approximate structure, not runtime behavior or test-only code.
+              </p>
+              <dl className="mt-4 space-y-3 text-xs">
+                <div className="border-t border-border/60 pt-3">
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-muted-foreground">Style label</dt>
+                    <dd className="font-medium text-foreground">{String(data.coding_style?.label ?? '—')}</dd>
+                  </div>
+                  <dd className="mt-1 text-[10px] leading-snug text-muted-foreground/95">
+                    Derived from the estimated <strong className="font-normal text-foreground/90">class ratio</strong>: OO-heavy
+                    if ratio ≥ 0.35, functional/procedural if ≤ 0.12, otherwise mixed.
+                  </dd>
                 </div>
-                <div className="flex justify-between gap-2">
-                  <dt className="text-muted-foreground">Class ratio (est.)</dt>
-                  <dd>{Number(data.coding_style?.class_ratio ?? 0).toFixed(2)}</dd>
+                <div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-muted-foreground">Class ratio (est.)</dt>
+                    <dd>{Number(data.coding_style?.class_ratio ?? 0).toFixed(2)}</dd>
+                  </div>
+                  <dd className="mt-1 text-[10px] leading-snug text-muted-foreground/95">
+                    <code className="text-[10px]">classes / (classes + functions)</code> counted from AST-style parsing of
+                    sampled files (classes vs top-level functions / methods).
+                  </dd>
                 </div>
-                <div className="flex justify-between gap-2">
-                  <dt className="text-muted-foreground">Avg. function size (est.)</dt>
-                  <dd>{Number(data.coding_style?.avg_function_lines_estimate ?? 0).toFixed(0)} lines</dd>
+                <div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-muted-foreground">Avg. function size (est.)</dt>
+                    <dd>{Number(data.coding_style?.avg_function_lines_estimate ?? 0).toFixed(0)} lines</dd>
+                  </div>
+                  <dd className="mt-1 text-[10px] leading-snug text-muted-foreground/95">
+                    Mean of per-function line estimates: Python uses approximate line spans per function; TS/JS/Java use
+                    file-line heuristics when a direct line count is not available. Use as a rough size trend, not exact line
+                    counts.
+                  </dd>
                 </div>
-                <div className="flex justify-between gap-2">
-                  <dt className="text-muted-foreground">Modularity hint</dt>
-                  <dd className="capitalize">{String(data.coding_style?.modularity_hint ?? '—')}</dd>
+                <div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-muted-foreground">Modularity hint</dt>
+                    <dd className="capitalize">{String(data.coding_style?.modularity_hint ?? '—')}</dd>
+                  </div>
+                  <dd className="mt-1 text-[10px] leading-snug text-muted-foreground/95">
+                    Heuristic: <strong className="font-normal text-foreground/90">high</strong> if average function size &lt;
+                    35 lines and fewer than three very large files (&gt;500 lines); <strong className="font-normal text-foreground/90">medium</strong> if
+                    avg &lt; 55 lines; otherwise <strong className="font-normal text-foreground/90">low</strong> (often larger
+                    units or monolithic files).
+                  </dd>
                 </div>
-                <div className="flex justify-between gap-2">
-                  <dt className="text-muted-foreground">Files sampled</dt>
-                  <dd>{Number(data.coding_style?.files_sampled ?? 0)}</dd>
+                <div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-muted-foreground">Files sampled</dt>
+                    <dd>{Number(data.coding_style?.files_sampled ?? 0)}</dd>
+                  </div>
+                  <dd className="mt-1 text-[10px] leading-snug text-muted-foreground/95">
+                    Number of source files walked for style metrics (split across languages), capped for performance.
+                  </dd>
                 </div>
               </dl>
             </section>

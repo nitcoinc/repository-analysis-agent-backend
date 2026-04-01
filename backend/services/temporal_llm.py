@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 from openai import OpenAI
 
 from core.config import get_settings
+from services.openai_chat import chat_completions_create
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -60,8 +61,8 @@ def enrich_temporal_insights(payload: Dict[str, Any]) -> Dict[str, Any]:
     )
 
     try:
-        resp = client.chat.completions.create(
-            model=settings.openai_model,
+        resp = chat_completions_create(
+            client,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
             max_tokens=1200,

@@ -1,5 +1,8 @@
 import logging
+import re
 import uuid
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request
 from pydantic import BaseModel
 from typing import Optional, List, Any
@@ -54,8 +57,9 @@ def _workflow_progress_from_analysis(analysis: dict) -> float:
     if st == "paused":
         ca = res.get("completed_agents") or []
         return min(1.0, len(ca) / WORKFLOW_AGENT_COUNT)
-    if st == "queued":
-        return 0.0
+    if st in ("cloning", "queued"):
+        # Preserve clone / queue progress (e.g. 0.02 cloning, 0.05 ready to analyze)
+        return min(1.0, float(analysis.get("progress", 0.0)))
     if "run_id" in analysis:
         ca = res.get("completed_agents")
         if ca is not None:
@@ -127,9 +131,126 @@ def _get_repository_name(repository_id: str) -> Optional[str]:
         db.close()
 
 
+def _derive_repository_name(payload: RepositoryAnalyzeRequest) -> str:
+    """Short display name for the repositories row (DB + UI)."""
+    if payload.github_repo and str(payload.github_repo).strip():
+        return str(payload.github_repo).strip()
+    if payload.repository_url and str(payload.repository_url).strip():
+        url = str(payload.repository_url).strip()
+        m = re.search(r"github\.com/([^/]+)/([^/.?#]+)", url, re.IGNORECASE)
+        if m:
+            return f"{m.group(1)}/{m.group(2)}"
+        base = url.rstrip("/").split("/")[-1]
+        if base.endswith(".git"):
+            base = base[:-4]
+        return (base or "repository")[:180]
+    if payload.repository_path and str(payload.repository_path).strip():
+        return Path(str(payload.repository_path).strip()).name or "repository"
+    return "repository"
+
+
+def _derive_github_coords(payload: RepositoryAnalyzeRequest) -> tuple[Optional[str], Optional[str]]:
+    """Preserve owner/repo metadata for GitHub URLs so temporal PR fetching works later."""
+    owner = (payload.github_owner or "").strip() or None
+    repo = (payload.github_repo or "").strip() or None
+    if owner and repo:
+        return owner, repo
+    if payload.repository_url and str(payload.repository_url).strip():
+        url = str(payload.repository_url).strip()
+        m = re.search(r"github\.com/([^/]+)/([^/.?#]+)", url, re.IGNORECASE)
+        if m:
+            return m.group(1), m.group(2)
+    return owner, repo
+
+
+def _payload_to_dict(payload: RepositoryAnalyzeRequest) -> dict:
+    gh_owner, gh_repo = _derive_github_coords(payload)
+    return {
+        "repository_url": payload.repository_url,
+        "repository_path": payload.repository_path,
+        "github_owner": gh_owner,
+        "github_repo": gh_repo,
+        "branch": payload.branch,
+    }
+
+
+def run_clone_and_analysis_task(repository_id: str, payload_dict: dict) -> None:
+    """
+    Clone (or attach local path) in the background so POST /analyze returns immediately.
+    Avoids HTTP/proxy timeouts on large repositories (e.g. CodeIgniter).
+    """
+    branch = (payload_dict.get("branch") or "").strip() or None
+    try:
+        active_analyses[repository_id] = {
+            "status": "cloning",
+            "progress": 0.02,
+            "message": "Cloning repository…",
+        }
+        _persist_repository_status(
+            repository_id,
+            "cloning",
+            0.02,
+            "Cloning repository…",
+        )
+
+        if payload_dict.get("github_owner") and payload_dict.get("github_repo"):
+            repo_path = repo_manager.clone_from_github(
+                str(payload_dict["github_owner"]).strip(),
+                str(payload_dict["github_repo"]).strip(),
+                branch,
+            )
+        elif payload_dict.get("repository_url"):
+            repo_path = repo_manager.clone_from_url(
+                str(payload_dict["repository_url"]).strip(),
+                branch,
+            )
+        elif payload_dict.get("repository_path"):
+            repo_path = repo_manager.use_local_path(str(payload_dict["repository_path"]).strip())
+        else:
+            raise ValueError("Invalid clone payload")
+
+        db = SessionLocal()
+        try:
+            row = db.query(Repository).filter(Repository.id == repository_id).first()
+            if row:
+                row.local_path = repo_path
+                if branch:
+                    row.branch = branch
+                row.status = "running"
+                row.progress = 0.05
+                row.message = "Starting analysis"
+                db.commit()
+        finally:
+            db.close()
+
+        active_analyses[repository_id] = {
+            "status": "running",
+            "progress": 0.05,
+            "message": "Starting analysis",
+        }
+        run_analysis_task(repository_id, repo_path)
+    except ValueError as e:
+        msg = str(e)
+        logger.warning("Clone failed for %s: %s", repository_id[:12], msg)
+        active_analyses[repository_id] = {
+            "status": "failed",
+            "progress": 0.0,
+            "message": msg,
+        }
+        _persist_repository_status(repository_id, "failed", 0.0, msg)
+    except Exception as e:
+        msg = f"Clone or setup failed: {e}"
+        logger.exception("run_clone_and_analysis_task failed for %s", repository_id[:12])
+        active_analyses[repository_id] = {
+            "status": "failed",
+            "progress": 0.0,
+            "message": msg,
+        }
+        _persist_repository_status(repository_id, "failed", 0.0, msg)
+
+
 def run_analysis_task(repository_id: str, repo_path: str):
     """Background task to run analysis."""
-    _persist_repository_status(repository_id, "analyzing", 0.05, "Initializing analysis")
     run_id: Optional[str] = None
     try:
         run_id = orchestrator.create_run(repository_id, {
@@ -142,6 +263,7 @@ def run_analysis_task(repository_id: str, repo_path: str):
             "progress": 0.05,
             "message": "Preparing workflow",
         }
+        _persist_repository_status(repository_id, "running", 0.05, "Preparing workflow")
         
         result = orchestrator.execute_workflow(run_id, list(WORKFLOW_SEQUENCE))
 
@@ -202,73 +324,59 @@ async def analyze_repository(
     background_tasks: BackgroundTasks,
     api_key: bool = Depends(verify_api_key)
 ):
-    """Start repository analysis."""
+    """Start repository analysis. Clone runs in the background so this returns quickly."""
     repository_id = str(uuid.uuid4())
-    repo_path = None
-    
-    try:
-        # Determine repository source and clone/use it
-        if payload.github_owner and payload.github_repo:
-            repo_path = repo_manager.clone_from_github(
-                payload.github_owner,
-                payload.github_repo,
-                payload.branch
-            )
-        elif payload.repository_url:
-            repo_path = repo_manager.clone_from_url(
-                payload.repository_url,
-                payload.branch
-            )
-        elif payload.repository_path:
-            repo_path = repo_manager.use_local_path(payload.repository_path)
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Must provide repository_url, repository_path, or github_owner/github_repo"
-            )
-        
-        # Persist repository record so other endpoints (reports/metrics) can reference it
-        db = SessionLocal()
-        try:
-            repo = Repository(
-                id=repository_id,
-                name=payload.github_repo or payload.repository_url or repository_id,
-                url=payload.repository_url,
-                local_path=repo_path,
-                github_owner=payload.github_owner,
-                github_repo=payload.github_repo,
-                branch=payload.branch or "main",
-                status="queued",
-                progress=0.0,
-            )
-            db.add(repo)
-            db.commit()
-        finally:
-            db.close()
 
-        # Start analysis in background
-        active_analyses[repository_id] = {
-            "status": "queued",
-            "progress": 0.0,
-        }
-
-        background_tasks.add_task(run_analysis_task, repository_id, repo_path)
-
-        return {
-            "repository_id": repository_id,
-            "status": "queued",
-            "message": "Analysis queued"
-        }
-    except ValueError as e:
+    if not (
+        (payload.github_owner and payload.github_repo)
+        or payload.repository_url
+        or payload.repository_path
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
+            detail="Must provide repository_url, repository_path, or github_owner/github_repo",
         )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to start analysis: {str(e)}"
+
+    branch_label = (payload.branch or "").strip() or "main"
+    display_name = _derive_repository_name(payload)
+    gh_owner, gh_repo = _derive_github_coords(payload)
+
+    db = SessionLocal()
+    try:
+        repo = Repository(
+            id=repository_id,
+            name=display_name,
+            url=payload.repository_url,
+            local_path=None,
+            github_owner=gh_owner,
+            github_repo=gh_repo,
+            branch=branch_label,
+            status="cloning",
+            progress=0.02,
+            message="Cloning repository…",
         )
+        db.add(repo)
+        db.commit()
+    finally:
+        db.close()
+
+    active_analyses[repository_id] = {
+        "status": "cloning",
+        "progress": 0.02,
+        "message": "Cloning repository…",
+    }
+
+    background_tasks.add_task(
+        run_clone_and_analysis_task,
+        repository_id,
+        payload.model_dump(),
+    )
+
+    return {
+        "repository_id": repository_id,
+        "status": "cloning",
+        "message": "Repository clone started; poll status for progress.",
+    }
 
 
 @router.get("/{repository_id}/status")
@@ -311,8 +419,6 @@ async def get_analysis_status(
                         float(analysis.get("progress", 0.0) or 0.0),
                         min(1.0, completed_count / WORKFLOW_AGENT_COUNT),
                     )
-                elif analysis.get("status") == "queued":
-                    analysis["message"] = "Queued"
         if analysis.get("status") not in ("running", "completed"):
             analysis["progress"] = _workflow_progress_from_analysis(analysis)
 

@@ -17,6 +17,7 @@ from core.config import get_settings
 from core.database import SessionLocal
 from models.service import Service as ServiceRow
 from services.graph_service import GraphService
+from services.openai_chat import chat_completions_create
 from services.repository_scope import resolve_repository_id
 
 logger = logging.getLogger(__name__)
@@ -200,33 +201,8 @@ def _embed_batch(client: OpenAI, texts: List[str]) -> List[List[float]]:
 
 
 def _create_chat_completion(client: OpenAI, **kwargs):
-    """Use the same chat model as the rest of the backend (`OPENAI_MODEL` / `settings.openai_model`)."""
-    model = (settings.openai_model or "").strip()
-    if not model:
-        raise RuntimeError("OPENAI_MODEL is not configured.")
-
-    fallbacks = [m.strip() for m in str(settings.openai_model_fallbacks or "").split(",") if m.strip()]
-    model_candidates: List[str] = []
-    for m in [model, *fallbacks]:
-        if m and m not in model_candidates:
-            model_candidates.append(m)
-
-    last_exc: Optional[Exception] = None
-    for candidate in model_candidates:
-        try:
-            if candidate != model:
-                logger.info("Chat model fallback attempt: %s (primary=%s)", candidate, model)
-            return client.chat.completions.create(model=candidate, **kwargs)
-        except Exception as exc:
-            last_exc = exc
-            logger.warning("Chat completion failed with model %s: %s", candidate, exc)
-            continue
-
-    attempted = ", ".join(model_candidates)
-    raise RuntimeError(
-        f"Chat model request failed. Attempted models: {attempted}. "
-        "Check OPENAI_MODEL, OPENAI_MODEL_FALLBACKS, and API access."
-    ) from last_exc
+    """Delegate to shared helper so OPENAI_MODEL is used consistently."""
+    return chat_completions_create(client, **kwargs)
 
 
 def _retrieve_numpy(
@@ -282,11 +258,13 @@ def retrieve_context(
             [{"note": "empty services"}],
         )
 
-    candidates = _retrieve_keyword(query, services, min(len(services), max(top_k * 2, RETRIEVAL_CANDIDATE_K)))
+    rerank_cap = int(getattr(settings, "chat_rerank_candidate_cap", 12) or 12)
+    keyword_cap = min(len(services), rerank_cap, max(top_k * 2, RETRIEVAL_CANDIDATE_K))
+    candidates = _retrieve_keyword(query, services, keyword_cap)
     debug: List[Dict[str, Any]] = [
-        {"retrieval": "keyword", "candidates": len(candidates), "services": len(services)}
+        {"retrieval": "keyword", "candidates": len(candidates), "services": len(services), "candidate_cap": keyword_cap}
     ]
-    if client and candidates:
+    if client and len(candidates) > top_k:
         try:
             retrieved = _retrieve_numpy(client, query, candidates, min(top_k, len(candidates)))
             debug.append({"rerank": "embedding_cosine", "hits": len(retrieved)})
@@ -296,6 +274,8 @@ def retrieve_context(
             debug.append({"rerank": "keyword_fallback", "hits": len(retrieved)})
     else:
         retrieved = candidates[:top_k]
+        if client and candidates:
+            debug.append({"rerank": "skipped_small_candidate_set", "hits": len(retrieved)})
 
     dep_text = _dependency_context(resolved)
     ctx_parts = ["## Retrieved services (most relevant first)\n"]

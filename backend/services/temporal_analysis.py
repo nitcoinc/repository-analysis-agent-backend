@@ -19,6 +19,13 @@ from services.temporal_github_service import PRRecord, fetch_pull_requests
 
 logger = logging.getLogger(__name__)
 
+
+def _utc_dt(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 HOTFIX_RE = re.compile(r"\b(hotfix|hot fix|emergency|rollback|revert|patch release)\b", re.I)
 LARGE_PR_FILES = 35
 LARGE_PR_LINES = 800
@@ -49,19 +56,37 @@ def map_file_to_service(rel_path: str, services: List[Dict[str, Any]]) -> Option
     return best_id
 
 
+def _map_file_to_service_cached(
+    rel_path: str,
+    services: List[Dict[str, Any]],
+    cache: Dict[str, Optional[str]],
+) -> Optional[str]:
+    rel = rel_path.replace("\\", "/").strip()
+    if rel in cache:
+        return cache[rel]
+    sid = map_file_to_service(rel, services)
+    cache[rel] = sid
+    return sid
+
+
 def _service_name_by_id(services: List[Dict[str, Any]]) -> Dict[str, str]:
     return {s["id"]: s.get("name") or s["id"] for s in services}
 
 
 def _commit_modules(
-    c: CommitRecord, services: List[Dict[str, Any]]
+    c: CommitRecord,
+    services: List[Dict[str, Any]],
+    file_service_cache: Optional[Dict[str, Optional[str]]] = None,
 ) -> Tuple[List[str], List[str]]:
+    cache = file_service_cache if file_service_cache is not None else {}
     mods: Set[str] = set()
+    touched: List[str] = []
     for f in c.files_changed:
-        sid = map_file_to_service(f, services)
+        sid = _map_file_to_service_cached(f, services, cache)
         if sid:
             mods.add(sid)
-    return sorted(mods), [f for f in c.files_changed if map_file_to_service(f, services)]
+            touched.append(f)
+    return sorted(mods), touched
 
 
 def _window_churn(
@@ -69,13 +94,14 @@ def _window_churn(
     services: List[Dict[str, Any]],
     days: int,
     end: datetime,
+    file_service_cache: Optional[Dict[str, Optional[str]]] = None,
 ) -> Dict[str, int]:
     start = end - timedelta(days=days)
     churn: Dict[str, int] = defaultdict(int)
     for c in commits:
         if c.committed_at < start or c.committed_at > end:
             continue
-        mods, _ = _commit_modules(c, services)
+        mods, _ = _commit_modules(c, services, file_service_cache)
         for m in mods:
             churn[m] += 1
     return dict(churn)
@@ -104,34 +130,39 @@ def build_timeline_events(
     commits: List[CommitRecord],
     prs: List[PRRecord],
     services: List[Dict[str, Any]],
-    max_events: int = 200,
+    max_events: int = 400,
+    file_service_cache: Optional[Dict[str, Optional[str]]] = None,
 ) -> List[Dict[str, Any]]:
-    events: List[Dict[str, Any]] = []
+    commit_events: List[Dict[str, Any]] = []
+    pr_events: List[Dict[str, Any]] = []
+    names = _service_name_by_id(services)
 
     for c in commits:
-        mods, _ = _commit_modules(c, services)
+        mods, _ = _commit_modules(c, services, file_service_cache)
         big = len(c.files_changed) >= 18 or c.total_lines_changed >= 400
-        events.append(
+        commit_events.append(
             {
                 "id": f"commit-{c.short_sha}",
                 "type": "commit",
                 "timestamp": c.committed_at.isoformat(),
                 "author": c.author_name or c.author_email,
                 "summary": c.subject,
-                "impacted_modules": [_service_name_by_id(services).get(m, m) for m in mods][:12],
+                "impacted_modules": [names.get(m, m) for m in mods][:12],
                 "impacted_service_ids": mods[:12],
                 "meta": {
                     "sha": c.short_sha,
                     "files": len(c.files_changed),
                     "lines": c.total_lines_changed,
                     "major": big,
+                    "body_preview": c.body_preview[:320],
+                    "file_sample": c.files_changed[:6],
                 },
             }
         )
 
     for pr in prs:
         mods: List[str] = []
-        events.append(
+        pr_events.append(
             {
                 "id": f"pr-{pr.number}",
                 "type": "pr_merge",
@@ -145,10 +176,22 @@ def build_timeline_events(
                     "additions": pr.additions,
                     "deletions": pr.deletions,
                     "changed_files": pr.changed_files,
+                    "commits": pr.commits,
+                    "head_ref": pr.head_ref,
+                    "base_ref": pr.base_ref,
+                    "body_preview": pr.body_preview[:320],
                 },
             }
         )
 
+    # Preserve PR visibility on commit-heavy repos by reserving part of the timeline budget.
+    commit_limit = max_events if not pr_events else max(120, int(max_events * 0.75))
+    pr_limit = max(40, max_events - commit_limit) if pr_events else 0
+
+    events = [
+        *commit_events[:commit_limit],
+        *pr_events[:pr_limit],
+    ]
     events = [e for e in events if e.get("timestamp")]
     events.sort(key=lambda x: x["timestamp"], reverse=True)
     return events[:max_events]
@@ -183,7 +226,7 @@ def _drift_statements(
 def _pr_insights(prs: List[PRRecord]) -> Dict[str, Any]:
     large = []
     hotfixes = []
-    file_touch_counter: Counter[str] = Counter()
+    recent = []
 
     for pr in prs:
         lines_changed = pr.additions + pr.deletions
@@ -199,11 +242,27 @@ def _pr_insights(prs: List[PRRecord]) -> Dict[str, Any]:
         title_body = f"{pr.title} {pr.body_preview}"
         if HOTFIX_RE.search(title_body):
             hotfixes.append({"number": pr.number, "title": pr.title})
+        recent.append(
+            {
+                "number": pr.number,
+                "title": pr.title,
+                "author": pr.author,
+                "merged_at": pr.merged_at.isoformat() if pr.merged_at else None,
+                "changed_files": pr.changed_files,
+                "commits": pr.commits,
+                "additions": pr.additions,
+                "deletions": pr.deletions,
+                "head_ref": pr.head_ref,
+                "base_ref": pr.base_ref,
+                "body_preview": pr.body_preview[:600],
+            }
+        )
 
     return {
         "large_prs": large[:15],
         "hotfix_patterns": hotfixes[:15],
         "repeat_files": [],  # filled from commits if needed
+        "recent_prs": recent[:20],
     }
 
 
@@ -384,20 +443,40 @@ def run_temporal_analysis(
     if not repo_row.local_path:
         raise ValueError("Repository has no local clone path")
 
-    until = until or datetime.now(timezone.utc)
-    if until.tzinfo is None:
-        until = until.replace(tzinfo=timezone.utc)
-    since = since or (until - timedelta(days=90))
-    if since.tzinfo is None:
-        since = since.replace(tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
+    # When the client omits both since and until, do NOT apply a default 90-day git filter:
+    # mature libs (e.g. click) often have no commits in the last 90 days, which yielded 0 results.
+    # Instead, load the newest max_commits commits regardless of age (no --since/--until in git).
+    user_set_since = since is not None
+    user_set_until = until is not None
+    use_git_date_filter = user_set_since or user_set_until
+
+    since_eff: Optional[datetime] = None
+    until_eff: Optional[datetime] = None
+    if use_git_date_filter:
+        until_eff = _utc_dt(until) if until else now
+        if since is not None:
+            since_eff = _utc_dt(since)
+        else:
+            since_eff = until_eff - timedelta(days=90)
+        git_since = since_eff
+        git_until = until_eff
+        pr_since = since_eff
+        pr_until = until_eff
+    else:
+        git_since = None
+        git_until = None
+        pr_since = None
+        pr_until = None
 
     branch = repo_row.branch or "main"
     services = _services_for_repo(db, resolved)
+    file_service_cache: Dict[str, Optional[str]] = {}
     commits = list_commits(
         repo_row.local_path,
         branch=branch,
-        since=since,
-        until=until,
+        since=git_since,
+        until=git_until,
         max_count=max_commits,
         author_filter=author,
     )
@@ -406,8 +485,8 @@ def run_temporal_analysis(
     prs, comment_samples = fetch_pull_requests(
         owner or "",
         gh_repo or "",
-        since=since,
-        until=until,
+        since=pr_since,
+        until=pr_until,
         max_prs=60,
     )
 
@@ -416,18 +495,18 @@ def run_temporal_analysis(
         commits = [
             c
             for c in commits
-            if sid in _commit_modules(c, services)[0]
+            if sid in _commit_modules(c, services, file_service_cache)[0]
         ]
 
-    now = until
-    churn_30 = _window_churn(commits, services, 30, now)
-    churn_prev = _window_churn(commits, services, 30, now - timedelta(days=30))
+    churn_end = datetime.now(timezone.utc)
+    churn_30 = _window_churn(commits, services, 30, churn_end, file_service_cache)
+    churn_prev = _window_churn(commits, services, 30, churn_end - timedelta(days=30), file_service_cache)
     degrees = _graph_degrees(resolved)
     names = _service_name_by_id(services)
 
     drift_statements = _drift_statements(churn_30, churn_prev, degrees, names)
     heatmap = build_heatmap(churn_30, services)
-    timeline = build_timeline_events(commits, prs, services)
+    timeline = build_timeline_events(commits, prs, services, file_service_cache=file_service_cache)
     pr_block = _pr_insights(prs)
     comments_block = _comment_intelligence(comment_samples)
     impact = _impact_evolution(services, churn_30, degrees)
@@ -451,11 +530,33 @@ def run_temporal_analysis(
         "commits_in_window": len(commits),
     }
 
+    if use_git_date_filter and since_eff is not None and until_eff is not None:
+        time_range: Dict[str, Any] = {
+            "since": since_eff.isoformat(),
+            "until": until_eff.isoformat(),
+            "mode": "calendar",
+        }
+    elif commits:
+        ctimes = [c.committed_at for c in commits]
+        time_range = {
+            "since": min(ctimes).isoformat(),
+            "until": max(ctimes).isoformat(),
+            "mode": "recent_commits",
+            "note": f"Newest {len(commits)} commit(s); no since/until filter (avoids empty history on older repos).",
+        }
+    else:
+        time_range = {
+            "since": None,
+            "until": None,
+            "mode": "recent_commits",
+            "note": "No commits returned (check branch, shallow clone depth, or repo path).",
+        }
+
     debug = {
         "commits_processed": len(commits),
         "prs_loaded": len(prs),
         "modules_mapped": len(services),
-        "time_range": {"since": since.isoformat(), "until": until.isoformat()},
+        "time_range": time_range,
     }
     logger.info(
         "temporal analysis: commits=%d prs=%d services=%d",

@@ -62,7 +62,7 @@ export default function ServicesPage() {
         title="Service inventory"
         description={
           repositoryId
-            ? `Showing services for the selected repository. You can also use a service id or a clone-folder segment in ?repo=.`
+            ? `Showing services for the selected repository. Counts reflect detected top-level modules (e.g. api, backend, frontend) plus a repository-root slice — not every folder. Use a service id or clone-folder segment in ?repo=.`
             : showAll
               ? 'Showing services from all analyzed repositories. Repeated service names across different analyses are expected.'
               : 'Loading the latest analyzed repository by default. Add ?all=1 to browse services from every analysis.'
@@ -194,7 +194,11 @@ export default function ServicesPage() {
                       Documentation summary
                     </p>
                     {summaryText ? (
-                      <MarkdownBody compact className="max-h-52 text-sm leading-relaxed">
+                      <MarkdownBody
+                        compact
+                        variant="card"
+                        className="text-sm leading-relaxed [&_p]:text-foreground/90 [&_p]:mb-2 [&_p:last-child]:mb-0"
+                      >
                         {summaryText}
                       </MarkdownBody>
                     ) : descriptionText ? (
@@ -202,7 +206,11 @@ export default function ServicesPage() {
                         <p className="mb-2 text-xs text-muted-foreground">
                           AI short summary not stored — showing full documentation excerpt.
                         </p>
-                        <MarkdownBody compact className="max-h-52 text-sm leading-relaxed">
+                        <MarkdownBody
+                          compact
+                          variant="default"
+                          className="max-h-52 text-sm leading-relaxed scrollbar-thin [&_p]:text-foreground/90"
+                        >
                           {descriptionText}
                         </MarkdownBody>
                       </>

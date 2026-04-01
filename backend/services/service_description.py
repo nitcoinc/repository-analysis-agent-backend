@@ -26,27 +26,34 @@ def build_service_summary_plain(
 ) -> str:
     """
     Short plain-text blurb for inventory cards when no LLM summary exists in the database.
-    Keeps copy consistent and readable (not raw markdown).
+    Written as natural sentences (not a rigid template), until a full analysis run stores LLM text.
     """
     meta = metadata or {}
-    classification = str(meta.get("classification") or "").replace("_", " ").strip() or "module"
+    classification = str(meta.get("classification") or "").replace("_", " ").strip() or "general"
     ep = int(meta.get("entry_point_count") or 0)
     lang = (language or "unknown").strip() or "unknown"
     sym = meta.get("symbol_stats") if isinstance(meta.get("symbol_stats"), dict) else {}
     classes = int(sym.get("class_count") or 0) if sym else 0
     funcs = int(sym.get("function_count") or 0) if sym else 0
 
-    head = f"{service_name} is a {lang} module classified as {classification}."
+    parts: list[str] = []
+    parts.append(
+        f'"{service_name}" is part of this {lang} codebase and roughly plays a {classification} role '
+        f"in the layout we detected."
+    )
     if ep > 0:
-        return f"{head} It exposes {ep} public entry point(s)."
+        parts.append(f"It advertises {ep} entry point(s), so it is likely where execution or tooling hooks in.")
     if classes or funcs:
-        parts = []
-        if classes:
-            parts.append(f"{classes} class(es)")
-        if funcs:
-            parts.append(f"{funcs} public function(s) or methods")
-        return f"{head} It contains {', and '.join(parts)} in the extracted symbols."
-    return f"{head} No public classes or functions were detected in the extracted symbols."
+        parts.append(
+            f"Roughly {classes} public classes and {funcs} public functions or methods showed up in static extraction—"
+            f"use the detail view for a deeper pass once documentation is generated."
+        )
+    else:
+        parts.append(
+            "We did not surface many public symbols yet; it may be a thin package, re-export, or needs a fresh analysis run."
+        )
+    parts.append("Re-run analysis with the API configured to replace this with a full AI summary.")
+    return " ".join(parts)
 
 
 def build_service_description(

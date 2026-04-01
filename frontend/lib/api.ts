@@ -33,9 +33,8 @@ api.interceptors.response.use((response) => {
   return response
 }, (error) => {
   if (error.response?.status === 401) {
-    // Handle unauthorized - clear token and redirect to login
+    // Handle unauthorized without redirecting to a non-existent /login route.
     localStorage.removeItem('auth_token')
-    window.location.href = '/login'
   }
   return Promise.reject(error)
 })

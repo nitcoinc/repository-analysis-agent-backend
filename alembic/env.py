@@ -1,11 +1,11 @@
 from logging.config import fileConfig
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
+from sqlalchemy import engine_from_config, pool, text
 from alembic import context
-from core.database import Base
+from core.database import Base, resolve_postgres_url
 from core.config import get_settings
 import os
 import sys
+from typing import Optional
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -18,10 +18,7 @@ config = context.config
 
 # Get settings and override sqlalchemy.url
 settings = get_settings()
-config.set_main_option(
-    "sqlalchemy.url",
-    settings.postgres_url or f"postgresql://{settings.postgres_user}:{settings.postgres_password}@{settings.postgres_host}:{settings.postgres_port}/{settings.postgres_db}"
-)
+config.set_main_option("sqlalchemy.url", resolve_postgres_url())
 
 # Interpret the config file for Python logging.
 if config.config_file_name is not None:
@@ -29,6 +26,11 @@ if config.config_file_name is not None:
 
 # add your model's MetaData object here
 target_metadata = Base.metadata
+
+
+def _version_table_schema() -> Optional[str]:
+    """Keep alembic_version in public when app tables use a custom schema (e.g. Supabase)."""
+    return "public" if (settings.postgres_schema or "").strip() else None
 
 
 def run_migrations_offline() -> None:
@@ -39,6 +41,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        version_table_schema=_version_table_schema(),
     )
 
     with context.begin_transaction():
@@ -54,8 +57,13 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        schema = (settings.postgres_schema or "").strip()
+        if schema:
+            connection.execute(text(f'SET search_path TO "{schema}", public'))
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection,
+            target_metadata=target_metadata,
+            version_table_schema=_version_table_schema(),
         )
 
         with context.begin_transaction():

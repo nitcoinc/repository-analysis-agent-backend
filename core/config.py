@@ -9,13 +9,19 @@ class Settings(BaseSettings):
     neo4j_user: str = "neo4j"
     neo4j_password: str = "password123"
     
-    # PostgreSQL Configuration
+    # PostgreSQL — use DATABASE_URL for hosted DB (e.g. Supabase). POSTGRES_SCHEMA sets
+    # search_path so unqualified ORM table names resolve to that schema.
+    database_url: str = ""
+    postgres_schema: str = ""
     postgres_host: str = "localhost"
     postgres_port: int = 5432
     postgres_db: str = "codebase_analysis"
     postgres_user: str = "postgres"
     postgres_password: str = "password123"
     postgres_url: str = ""
+    # When True, startup and Docker entrypoint skip Alembic (use with pre-provisioned Supabase tables).
+    # Also avoids transaction-pooler connections that roll back DDL. Env: SKIP_ALEMBIC_UPGRADE
+    skip_alembic_upgrade: bool = False
     
     # Redis Configuration
     redis_host: str = "localhost"
@@ -96,7 +102,7 @@ class Settings(BaseSettings):
     log_format: str = "json"  # json or text
     
     class Config:
-        env_file = (".env", "backend/.env")
+        env_file = ".env"
         case_sensitive = False
 
 

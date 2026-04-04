@@ -13,6 +13,26 @@ settings = get_settings()
 
 Base = declarative_base()
 
+
+def resolve_postgres_url() -> str:
+    """DSN for SQLAlchemy and Alembic: DATABASE_URL, else POSTGRES_URL, else built from POSTGRES_*."""
+    if settings.database_url:
+        return settings.database_url
+    if settings.postgres_url:
+        return settings.postgres_url
+    return (
+        f"postgresql://{settings.postgres_user}:{settings.postgres_password}"
+        f"@{settings.postgres_host}:{settings.postgres_port}/{settings.postgres_db}"
+    )
+
+
+def _postgres_connect_args() -> dict:
+    schema = (settings.postgres_schema or "").strip()
+    if not schema:
+        return {}
+    return {"options": f"-c search_path={schema},public"}
+
+
 # Neo4j Connection
 _neo4j_driver: Optional[GraphDatabase.driver] = None
 
@@ -46,13 +66,11 @@ def close_neo4j_driver():
 
 
 # PostgreSQL Connection
-if not settings.postgres_url:
-    settings.postgres_url = (
-        f"postgresql://{settings.postgres_user}:{settings.postgres_password}"
-        f"@{settings.postgres_host}:{settings.postgres_port}/{settings.postgres_db}"
-    )
-
-engine = create_engine(settings.postgres_url, pool_pre_ping=True)
+engine = create_engine(
+    resolve_postgres_url(),
+    pool_pre_ping=True,
+    connect_args=_postgres_connect_args(),
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
@@ -100,6 +118,10 @@ def init_db():
     from alembic.config import Config
     from alembic import command
     import os
+
+    if settings.skip_alembic_upgrade:
+        logger.info("Skipping Alembic upgrade (skip_alembic_upgrade / SKIP_ALEMBIC_UPGRADE is set)")
+        return
 
     alembic_cfg = Config(os.path.join(os.path.dirname(os.path.dirname(__file__)), "alembic.ini"))
 

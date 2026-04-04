@@ -22,5 +22,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD curl -fsS http://127.0.0.1:8000/health || exit 1
 
-# Migrations before bind (init_db() also upgrades on startup — idempotent)
-CMD ["/bin/sh", "-c", "alembic upgrade head && exec uvicorn main:app --host 0.0.0.0 --port 8000"]
+# Schema is applied via SQL (sql/repository_analysis_schema.sql + admin_grant_app_role.sql), not Alembic at boot.
+# init_db() still honors SKIP_ALEMBIC_UPGRADE for optional local Alembic; keep it true for DML-only DB users.
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

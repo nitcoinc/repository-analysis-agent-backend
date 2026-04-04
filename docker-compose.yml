@@ -23,26 +23,6 @@ services:
       timeout: 5s
       retries: 5
 
-  postgres:
-    image: postgres:16-alpine
-    container_name: postgres-codebase-analysis
-    restart: unless-stopped
-    ports:
-      - "5432:5432"
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - app-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   redis:
     image: redis:7-alpine
     container_name: redis-codebase-analysis
@@ -61,7 +41,7 @@ services:
 
   backend:
     build:
-      context: ./backend
+      context: .
       dockerfile: Dockerfile
     container_name: backend-codebase-analysis
     restart: unless-stopped
@@ -70,14 +50,10 @@ services:
     env_file:
       - .env
     environment:
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: "5432"
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_USER: neo4j
       REDIS_HOST: redis
       REDIS_PORT: "6379"
-      # Compose substitutes from the same root `.env` as `env_file`; explicit lines document keys
-      # and avoid edge cases where only a subset of vars reach the process.
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
     healthcheck:
@@ -87,8 +63,6 @@ services:
       retries: 5
       start_period: 90s
     depends_on:
-      postgres:
-        condition: service_healthy
       neo4j:
         condition: service_healthy
       redis:
@@ -99,31 +73,10 @@ services:
       - backend_repositories:/app/repositories
       - backend_uploads:/app/uploads
 
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-      args:
-        API_PROXY_TARGET: http://backend:8000
-        NEXT_PUBLIC_API_KEY: ${NEXT_PUBLIC_API_KEY}
-    container_name: frontend-codebase-analysis
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    environment:
-      NODE_ENV: production
-      API_PROXY_TARGET: http://backend:8000
-    depends_on:
-      backend:
-        condition: service_healthy
-    networks:
-      - app-network
-
 volumes:
   neo4j_data:
   neo4j_logs:
   neo4j_plugins:
-  postgres_data:
   redis_data:
   backend_repositories:
   backend_uploads:

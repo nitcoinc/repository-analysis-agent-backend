@@ -13,11 +13,12 @@ class Settings(BaseSettings):
     # search_path so unqualified ORM table names resolve to that schema.
     database_url: str = ""
     postgres_schema: str = ""
-    postgres_host: str = "localhost"
+    # Used only when DATABASE_URL and POSTGRES_URL are unset (set via POSTGRES_* env vars).
+    postgres_host: str = ""
     postgres_port: int = 5432
-    postgres_db: str = "codebase_analysis"
-    postgres_user: str = "postgres"
-    postgres_password: str = "password123"
+    postgres_db: str = ""
+    postgres_user: str = ""
+    postgres_password: str = ""
     postgres_url: str = ""
     # When True, startup and Docker entrypoint skip Alembic (use with pre-provisioned Supabase tables).
     # Also avoids transaction-pooler connections that roll back DDL. Env: SKIP_ALEMBIC_UPGRADE

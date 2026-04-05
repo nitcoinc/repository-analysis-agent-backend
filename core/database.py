@@ -13,17 +13,46 @@ settings = get_settings()
 
 Base = declarative_base()
 
+# Resolved once per process (SQLAlchemy engine + Alembic both call resolve_postgres_url).
+_resolved_postgres_url: Optional[str] = None
+
 
 def resolve_postgres_url() -> str:
-    """DSN for SQLAlchemy and Alembic: DATABASE_URL, else POSTGRES_URL, else built from POSTGRES_*."""
-    if settings.database_url:
-        return settings.database_url
-    if settings.postgres_url:
-        return settings.postgres_url
-    return (
-        f"postgresql://{settings.postgres_user}:{settings.postgres_password}"
-        f"@{settings.postgres_host}:{settings.postgres_port}/{settings.postgres_db}"
+    """DSN for SQLAlchemy and Alembic: DATABASE_URL first, else POSTGRES_URL, else POSTGRES_* components."""
+    global _resolved_postgres_url
+    if _resolved_postgres_url is not None:
+        return _resolved_postgres_url
+
+    primary = (settings.database_url or "").strip()
+    if primary:
+        print("Using DATABASE_URL for DB connection", flush=True)
+        _resolved_postgres_url = primary
+        return primary
+
+    legacy_url = (settings.postgres_url or "").strip()
+    if legacy_url:
+        print("Using POSTGRES_URL for DB connection", flush=True)
+        _resolved_postgres_url = legacy_url
+        return legacy_url
+
+    host = (settings.postgres_host or "").strip()
+    user = (settings.postgres_user or "").strip()
+    db = (settings.postgres_db or "").strip()
+    password = settings.postgres_password or ""
+    port = settings.postgres_port
+
+    if not host or not user or not db:
+        raise ValueError(
+            "Database configuration missing. Set DATABASE_URL or POSTGRES_* variables."
+        )
+
+    print("Using individual POSTGRES_* configuration for DB connection", flush=True)
+    built = (
+        f"postgresql://{user}:{password}"
+        f"@{host}:{port}/{db}"
     )
+    _resolved_postgres_url = built
+    return built
 
 
 def _postgres_connect_args() -> dict:

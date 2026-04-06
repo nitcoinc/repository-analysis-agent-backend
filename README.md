@@ -17,7 +17,7 @@ FastAPI backend for the codebase analysis agent system. The UI lives in a **sepa
    - **`POSTGRES_SCHEMA=repository_analysis`** — must match the schema where tables live.
    - **`NEO4J_URI`**, **`NEO4J_USER`**, **`NEO4J_PASSWORD`**
    - **`REDIS_HOST`** / **`REDIS_PORT`** (or **`REDIS_URL`**)
-   - **`SKIP_WAIT_FOR_DEPS=true`** when using Compose (no bundled DB graph)
+   - Leave **`POSTGRES_WAIT_HOST`** / **`NEO4J_WAIT_HOST`** / **`REDIS_WAIT_HOST`** unset for external services (Docker entrypoint will not wait on `postgres:5432`).
    - **`API_KEY`**, **`SECRET_KEY`**, etc.
 
 3. **Stamp Alembic** once so startup migrations do not try to recreate existing tables:
@@ -96,9 +96,9 @@ See `AGENTS.md` for reload caveats.
 
 Per [Dokploy build types](https://docs.dokploy.com/docs/core/applications/build-type), set **Dockerfile path** and **context** (usually `.`). In the app **Domains** UI, set the **container port to `8000`** (not 3000).
 
-**Why startup can fail:** `backend/wait-for-services.sh` waits for TCP on hostnames **`postgres`**, **`neo4j`**, and **`redis`**. Those names only resolve on Docker Compose’s internal network. A single Dokploy app has no such services unless you add them and join networks.
+**Startup waits:** The Docker entrypoint only waits for TCP if you set **`POSTGRES_WAIT_HOST`**, **`NEO4J_WAIT_HOST`**, or **`REDIS_WAIT_HOST`**. With external **`DATABASE_URL`** / **`NEO4J_URI`** / Redis, leave those unset so the container does not hang on **`postgres:5432`**. Set **`SKIP_WAIT_FOR_DEPS=true`** only if you need to force-skip waits while those variables are set.
 
-**Fix:** In Dokploy **Environment**, set **`SKIP_WAIT_FOR_DEPS=true`** (or `1`). Then set **`DATABASE_URL`**, **`NEO4J_URI`**, **`NEO4J_USER`**, **`NEO4J_PASSWORD`**, and **`REDIS_URL`** or **`REDIS_HOST`** / **`REDIS_PORT`** / **`REDIS_PASSWORD`**. For a pre-provisioned Postgres user without DDL rights, keep **`SKIP_ALEMBIC_UPGRADE=true`**.
+Set **`DATABASE_URL`**, **`NEO4J_URI`**, **`NEO4J_USER`**, **`NEO4J_PASSWORD`**, and **`REDIS_URL`** or **`REDIS_HOST`** / **`REDIS_PORT`** / **`REDIS_PASSWORD`**. For a pre-provisioned Postgres user without DDL rights, keep **`SKIP_ALEMBIC_UPGRADE=true`**.
 
 Dokploy can inject a generated `.env` at runtime ([variables](https://docs.dokploy.com/docs/core/variables)); ensure every variable your `Settings` class needs is defined there.
 

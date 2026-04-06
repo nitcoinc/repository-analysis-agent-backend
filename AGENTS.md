@@ -21,7 +21,7 @@ This repository is the **Python FastAPI backend** at the **repo root**. The Next
 sudo docker compose up -d --build   # from repo root; .env must list all external endpoints
 ```
 
-Set **`SKIP_WAIT_FOR_DEPS=true`** in `.env` so the container does not wait for non-existent `postgres`/`neo4j`/`redis` hostnames.
+Do not set **`POSTGRES_WAIT_HOST`** / **`NEO4J_WAIT_HOST`** / **`REDIS_WAIT_HOST`** unless those hostnames exist on the container network; the wait script defaults to **no** TCP waits (external endpoints use **`DATABASE_URL`**, **`NEO4J_URI`**, Redis env vars only).
 
 ### Database (hosted Postgres + schema)
 

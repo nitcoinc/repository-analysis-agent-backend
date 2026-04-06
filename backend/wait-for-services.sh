@@ -1,24 +1,27 @@
 #!/usr/bin/env bash
-# Wait for TCP reachability of Postgres, Neo4j Bolt, and Redis before app startup.
-# Configure hosts/ports via environment (defaults suit docker-compose service names).
+# Optional TCP waits before app startup. External Postgres/Neo4j/Redis do not use compose
+# hostnames, so by default nothing is waited on.
 #
-# Dokploy / single-container / PaaS: there is no hostname "postgres" unless you attach
-# that service on the same Docker network. Set SKIP_WAIT_FOR_DEPS=1 (or true) to skip
-# waits and rely on DATABASE_URL, NEO4J_URI, REDIS_HOST pointing at real hosts.
+# Set only what you need:
+#   POSTGRES_WAIT_HOST + POSTGRES_WAIT_PORT (e.g. postgres + 5432 on compose network)
+#   NEO4J_WAIT_HOST + NEO4J_WAIT_PORT
+#   REDIS_WAIT_HOST + REDIS_WAIT_PORT
+#
+# Or set SKIP_WAIT_FOR_DEPS=1 to skip even if hosts are set (rare).
 set -euo pipefail
 
 case "${SKIP_WAIT_FOR_DEPS:-}" in
   1|true|TRUE|yes|Yes)
-    echo "SKIP_WAIT_FOR_DEPS set — skipping TCP waits (Dokploy / external deps)"
+    echo "SKIP_WAIT_FOR_DEPS set — skipping TCP waits"
     exit 0
     ;;
 esac
 
-POSTGRES_WAIT_HOST="${POSTGRES_WAIT_HOST:-postgres}"
+POSTGRES_WAIT_HOST="${POSTGRES_WAIT_HOST:-}"
 POSTGRES_WAIT_PORT="${POSTGRES_WAIT_PORT:-5432}"
-NEO4J_WAIT_HOST="${NEO4J_WAIT_HOST:-neo4j}"
+NEO4J_WAIT_HOST="${NEO4J_WAIT_HOST:-}"
 NEO4J_WAIT_PORT="${NEO4J_WAIT_PORT:-7687}"
-REDIS_WAIT_HOST="${REDIS_WAIT_HOST:-redis}"
+REDIS_WAIT_HOST="${REDIS_WAIT_HOST:-}"
 REDIS_WAIT_PORT="${REDIS_WAIT_PORT:-6379}"
 WAIT_TIMEOUT_SEC="${WAIT_TIMEOUT_SEC:-60}"
 
@@ -42,8 +45,22 @@ wait_tcp() {
   done
 }
 
-wait_tcp "${POSTGRES_WAIT_HOST}" "${POSTGRES_WAIT_PORT}" "postgres"
-wait_tcp "${NEO4J_WAIT_HOST}" "${NEO4J_WAIT_PORT}" "neo4j"
-wait_tcp "${REDIS_WAIT_HOST}" "${REDIS_WAIT_PORT}" "redis"
+any_wait=false
+if [ -n "${POSTGRES_WAIT_HOST}" ]; then
+  any_wait=true
+  wait_tcp "${POSTGRES_WAIT_HOST}" "${POSTGRES_WAIT_PORT}" "postgres"
+fi
+if [ -n "${NEO4J_WAIT_HOST}" ]; then
+  any_wait=true
+  wait_tcp "${NEO4J_WAIT_HOST}" "${NEO4J_WAIT_PORT}" "neo4j"
+fi
+if [ -n "${REDIS_WAIT_HOST}" ]; then
+  any_wait=true
+  wait_tcp "${REDIS_WAIT_HOST}" "${REDIS_WAIT_PORT}" "redis"
+fi
 
-echo "all dependencies reachable"
+if [ "${any_wait}" = false ]; then
+  echo "No *_WAIT_HOST set — skipping TCP waits (external DATABASE_URL / NEO4J_URI / Redis)"
+else
+  echo "all configured dependencies reachable"
+fi

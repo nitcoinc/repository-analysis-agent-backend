@@ -25,13 +25,13 @@ def resolve_postgres_url() -> str:
 
     primary = (settings.database_url or "").strip()
     if primary:
-        print("Using DATABASE_URL for DB connection", flush=True)
+        logger.info("Using DATABASE_URL for PostgreSQL connection")
         _resolved_postgres_url = primary
         return primary
 
     legacy_url = (settings.postgres_url or "").strip()
     if legacy_url:
-        print("Using POSTGRES_URL for DB connection", flush=True)
+        logger.info("Using POSTGRES_URL for PostgreSQL connection")
         _resolved_postgres_url = legacy_url
         return legacy_url
 
@@ -46,7 +46,7 @@ def resolve_postgres_url() -> str:
             "Database configuration missing. Set DATABASE_URL or POSTGRES_* variables."
         )
 
-    print("Using individual POSTGRES_* configuration for DB connection", flush=True)
+    logger.info("Using POSTGRES_* env vars for PostgreSQL connection")
     built = (
         f"postgresql://{user}:{password}"
         f"@{host}:{port}/{db}"
@@ -116,18 +116,34 @@ def get_db():
 _redis_client: Optional[Redis] = None
 
 
+def redis_storage_uri() -> str:
+    """Redis URL for slowapi / external tools (matches get_redis_client)."""
+    url = (settings.redis_url or "").strip()
+    if url:
+        return url
+    password = (settings.redis_password or "").strip()
+    auth = f":{password}@" if password else ""
+    return f"redis://{auth}{settings.redis_host}:{settings.redis_port}/{settings.redis_db}"
+
+
 def get_redis_client():
     """Get or create Redis client instance."""
     global _redis_client
     if _redis_client is None:
         try:
-            _redis_client = Redis(
-                host=settings.redis_host,
-                port=settings.redis_port,
-                db=settings.redis_db,
-                decode_responses=True
-            )
-            # Test connection
+            url = (settings.redis_url or "").strip()
+            if url:
+                _redis_client = Redis.from_url(url, decode_responses=True)
+            else:
+                kw = {
+                    "host": settings.redis_host,
+                    "port": settings.redis_port,
+                    "db": settings.redis_db,
+                    "decode_responses": True,
+                }
+                if (settings.redis_password or "").strip():
+                    kw["password"] = settings.redis_password
+                _redis_client = Redis(**kw)
             _redis_client.ping()
             logger.info("Redis connection established")
         except Exception as e:

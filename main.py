@@ -1,6 +1,7 @@
 import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from api.routes import (
@@ -19,6 +20,7 @@ from api.routes import (
 )
 from core.config import get_settings
 from core.database import close_neo4j_driver, init_db
+from core.startup_checks import dependency_status, validate_external_dependencies
 
 # Configure logging
 logging.basicConfig(
@@ -133,11 +135,21 @@ def health_check():
     }
 
 
+@app.get("/health/dependencies")
+def health_dependencies():
+    """PostgreSQL, Neo4j, and Redis reachability (for ops / Dokploy). Returns 503 if any fail."""
+    body = dependency_status()
+    if any(v.get("status") != "ok" for v in body.values()):
+        return JSONResponse(status_code=503, content=body)
+    return body
+
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize resources on startup."""
+    validate_external_dependencies()
     init_db()
-    logger.info("Startup complete: DB ready")
+    logger.info("Startup complete: dependencies validated, DB init finished")
 
 
 @app.on_event("shutdown")

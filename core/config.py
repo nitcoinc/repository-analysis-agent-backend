@@ -23,11 +23,15 @@ class Settings(BaseSettings):
     # When True, startup and Docker entrypoint skip Alembic (use with pre-provisioned Supabase tables).
     # Also avoids transaction-pooler connections that roll back DDL. Env: SKIP_ALEMBIC_UPGRADE
     skip_alembic_upgrade: bool = False
+    # When True, skip PostgreSQL/Neo4j/Redis checks at startup (debug only). Env: SKIP_STARTUP_DEPENDENCY_CHECK
+    skip_startup_dependency_check: bool = False
     
-    # Redis Configuration
+    # Redis Configuration — use REDIS_URL **or** REDIS_HOST (+ optional REDIS_PASSWORD).
+    redis_url: str = ""
     redis_host: str = "localhost"
     redis_port: int = 6379
     redis_db: int = 0
+    redis_password: str = ""
     
     # OpenAI Configuration (env: OPENAI_API_KEY, OPENAI_MODEL, OPENAI_MODEL_FALLBACKS)
     openai_api_key: str = ""

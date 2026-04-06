@@ -1,7 +1,18 @@
 #!/usr/bin/env bash
 # Wait for TCP reachability of Postgres, Neo4j Bolt, and Redis before app startup.
 # Configure hosts/ports via environment (defaults suit docker-compose service names).
+#
+# Dokploy / single-container / PaaS: there is no hostname "postgres" unless you attach
+# that service on the same Docker network. Set SKIP_WAIT_FOR_DEPS=1 (or true) to skip
+# waits and rely on DATABASE_URL, NEO4J_URI, REDIS_HOST pointing at real hosts.
 set -euo pipefail
+
+case "${SKIP_WAIT_FOR_DEPS:-}" in
+  1|true|TRUE|yes|Yes)
+    echo "SKIP_WAIT_FOR_DEPS set — skipping TCP waits (Dokploy / external deps)"
+    exit 0
+    ;;
+esac
 
 POSTGRES_WAIT_HOST="${POSTGRES_WAIT_HOST:-postgres}"
 POSTGRES_WAIT_PORT="${POSTGRES_WAIT_PORT:-5432}"

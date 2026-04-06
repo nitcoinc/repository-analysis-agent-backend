@@ -25,6 +25,16 @@ def _client() -> Optional[OpenAI]:
         return None
 
 
+def _merge_ai_summary_gaps(dest: Dict[str, Any], fb: Dict[str, Any]) -> None:
+    """Fill empty LLM strings from rule-based fallback so the UI never shows blank sections."""
+    d_ai = dict(dest.get("ai_summary") or {})
+    f_ai = fb.get("ai_summary") or {}
+    for k in ("drift_summary", "risky_modules", "anomalies"):
+        if not str(d_ai.get(k) or "").strip():
+            d_ai[k] = str(f_ai.get(k) or "").strip()
+    dest["ai_summary"] = d_ai
+
+
 def enrich_temporal_insights(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
     Adds: insights[], ai_summary { drift_summary, risky_modules, anomalies }.
@@ -34,6 +44,7 @@ def enrich_temporal_insights(payload: Dict[str, Any]) -> Dict[str, Any]:
     heat = payload.get("heatmap") or {}
     pr_i = payload.get("pr_insights") or {}
     dbg = payload.get("debug") or {}
+    structured_insights: List[Dict[str, Any]] = list(payload.get("insights") or [])
 
     fallback = _fallback_insights(payload)
 
@@ -49,7 +60,11 @@ def enrich_temporal_insights(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
     if not client:
-        return fallback
+        out = dict(fallback)
+        if structured_insights:
+            out["insights"] = structured_insights[:10]
+        _merge_ai_summary_gaps(out, fallback)
+        return out
 
     prompt = (
         "You are analyzing code evolution over time. Identify risks, trends, and anomalies "
@@ -59,6 +74,8 @@ def enrich_temporal_insights(payload: Dict[str, Any]) -> Dict[str, Any]:
         '- "drift_summary": string, 2-4 sentences\n'
         '- "risky_modules": string, list module names or themes at risk\n'
         '- "anomalies": string, unusual patterns (spikes, large PRs, hotfixes)\n'
+        "Every string value must be non-empty when facts exist; if a category has no signal, write "
+        '"No strong signal in this sample." rather than leaving the field blank.\n'
         f"\nFACTS:\n{json.dumps(compact, indent=2)}"
     )
 
@@ -77,14 +94,21 @@ def enrich_temporal_insights(payload: Dict[str, Any]) -> Dict[str, Any]:
             insights = []
         norm: List[Dict[str, Any]] = []
         for i in insights[:10]:
-            if isinstance(i, dict) and i.get("title"):
-                norm.append(
-                    {
-                        "severity": str(i.get("severity") or "medium").lower(),
-                        "title": str(i.get("title", ""))[:200],
-                        "detail": str(i.get("detail", ""))[:800],
-                    }
-                )
+            if not isinstance(i, dict):
+                continue
+            title = str(i.get("title") or "").strip()
+            detail = str(i.get("detail") or "").strip()
+            if not title and detail:
+                title = "Insight"
+            if not title:
+                continue
+            norm.append(
+                {
+                    "severity": str(i.get("severity") or "medium").lower(),
+                    "title": title[:200],
+                    "detail": detail[:800],
+                }
+            )
         out = {
             "insights": norm,
             "ai_summary": {
@@ -93,11 +117,18 @@ def enrich_temporal_insights(payload: Dict[str, Any]) -> Dict[str, Any]:
                 "anomalies": str(data.get("anomalies") or "").strip(),
             },
         }
-        logger.info("temporal_llm: generated %d insights", len(norm))
+        if not out["insights"] and structured_insights:
+            out["insights"] = structured_insights[:10]
+        _merge_ai_summary_gaps(out, fallback)
+        logger.info("temporal_llm: generated %d insights", len(out["insights"]))
         return out
     except Exception as exc:
         logger.warning("temporal_llm failed: %s", exc)
-        return fallback
+        out = dict(fallback)
+        if structured_insights:
+            out["insights"] = structured_insights[:10]
+        _merge_ai_summary_gaps(out, fallback)
+        return out
 
 
 def _fallback_insights(payload: Dict[str, Any]) -> Dict[str, Any]:

@@ -15,10 +15,70 @@ from models.repository import Repository
 from models.service import Service as ServiceRow
 from services.graph_service import GraphService
 from services.repository_scope import resolve_repository_id
+from core.config import get_settings
 from services.temporal_git_service import CommitRecord, list_commits
 from services.temporal_github_service import PRRecord, fetch_pull_requests
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_repository_clone_path(local_path: str) -> str:
+    """
+    Resolve DB ``local_path`` to an on-disk git working tree.
+
+    Clones may be missing after restarts, volume resets, or cwd changes; paths are sometimes
+    stored relative to the API process cwd. Raises ValueError with an operator-friendly message.
+    """
+    raw = (local_path or "").strip()
+    if not raw:
+        raise ValueError("Repository has no local clone path")
+    p = Path(raw)
+    candidates: List[str] = []
+
+    def _try(path: Path) -> Optional[str]:
+        try:
+            r = path.resolve()
+        except OSError:
+            return None
+        candidates.append(str(r))
+        if r.is_dir():
+            return str(r)
+        return None
+
+    hit = _try(p)
+    if hit and Path(hit).is_dir():
+        return hit
+
+    settings = get_settings()
+    base = Path(settings.repositories_dir).expanduser()
+    if not base.is_absolute():
+        try:
+            base = (Path.cwd() / base).resolve()
+        except OSError:
+            base = base.resolve()
+    stem = p.name if p.name else p.parts[-1] if p.parts else ""
+
+    if not p.is_absolute():
+        hit = _try(Path.cwd() / p)
+        if hit and Path(hit).is_dir():
+            return hit
+        if stem:
+            hit = _try(base / stem)
+            if hit and Path(hit).is_dir():
+                return hit
+
+    if stem:
+        hit = _try(base / stem)
+        if hit and Path(hit).is_dir():
+            return hit
+
+    preview = ", ".join(candidates[:4]) if candidates else raw
+    raise ValueError(
+        "Local git clone for this repository is not available on this server (missing directory or "
+        f"not a git checkout). Checked: {preview}. "
+        "Clones live under the API's REPOSITORIES_DIR and can be removed after a restart or redeploy—"
+        "open Analyze and run a new analysis to re-clone, or restore the files from backup."
+    )
 
 
 def _utc_dt(dt: datetime) -> datetime:
@@ -779,6 +839,8 @@ def run_temporal_analysis(
     if not repo_row.local_path:
         raise ValueError("Repository has no local clone path")
 
+    clone_root = _resolve_repository_clone_path(repo_row.local_path)
+
     now = datetime.now(timezone.utc)
     # When the client omits both since and until, do NOT apply a default 90-day git filter:
     # mature libs (e.g. click) often have no commits in the last 90 days, which yielded 0 results.
@@ -807,12 +869,12 @@ def run_temporal_analysis(
 
     branch = repo_row.branch or "main"
     services = _services_for_repo(db, resolved)
-    _relativize_service_paths_if_needed(services, repo_row.local_path)
+    _relativize_service_paths_if_needed(services, clone_root)
     path_prefixes = _service_path_prefixes(services)
     n_services_with_paths = sum(1 for s in services if (s.get("file_path") or "").strip())
     file_service_cache: Dict[str, Optional[str]] = {}
     commits = list_commits(
-        repo_row.local_path,
+        clone_root,
         branch=branch,
         since=git_since,
         until=git_until,

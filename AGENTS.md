@@ -44,7 +44,7 @@ Point the frontend at this API (e.g. `NEXT_PUBLIC_API_URL=http://localhost:8000`
 - **Do NOT use `--reload`** when running the backend with `uvicorn` if clones write under `./repositories/` without excludes — restarts drop in-memory analysis state.
 - No test framework or linter is configured for the backend.
 - Configure `.env` at the repo root for all external services.
-- `OPENAI_API_KEY` and `GITHUB_TOKEN` are optional; features degrade gracefully without them.
+- `OPENAI_API_KEY`, `OPENAI_BASE_URL` (optional; default OpenAI API), and `GITHUB_TOKEN` are optional; features degrade gracefully without them.
 - Alembic `upgrade head` runs in Docker before Uvicorn unless **`SKIP_ALEMBIC_UPGRADE`** is set; `init_db()` mirrors this on startup.
 - Analysis may complete with status `"paused"` when the human_review_agent creates checkpoints.
 

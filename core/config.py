@@ -33,7 +33,9 @@ class Settings(BaseSettings):
     redis_db: int = 0
     redis_password: str = ""
     
-    # OpenAI Configuration (env: OPENAI_API_KEY, OPENAI_MODEL, OPENAI_MODEL_FALLBACKS)
+    # OpenAI-compatible API (env). Key + base URL are both overridable (OpenAI, Azure OpenAI
+    # proxy, LiteLLM, local gateways, etc.). Empty OPENAI_BASE_URL uses SDK default when omitted.
+    # OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL, OPENAI_MODEL_FALLBACKS, OPENAI_EMBEDDING_MODEL
     openai_api_key: str = ""
     openai_model: str = "gpt-5.3"
     # Comma-separated; only used if primary fails. Default empty so all chat uses OPENAI_MODEL only.
